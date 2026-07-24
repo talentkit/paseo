@@ -436,6 +436,81 @@ describe("ReplicaCache", () => {
     expect(restoredTimeline).toEqual(timeline());
   });
 
+  it("preserves workspace links after reopening a cache with a current directory cursor", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const baseline = directory({
+      agents: { generation: "g", afterSeq: 12 },
+      projects: { generation: "g", afterSeq: 4 },
+      workspaces: { generation: "g", afterSeq: 7 },
+    });
+    const workspace = normalizeWorkspaceDescriptor({
+      ...workspacePayload(),
+      links: [
+        { name: "Open in Code", url: "https://code.example.com/?folder=%2Frepo%2Fpaseo" },
+        { name: "Documentation", url: "https://docs.example.com/" },
+      ],
+    });
+    baseline.workspaces.set(workspace.id, workspace);
+    writer.replaceDirectoryBaseline(SERVER_ID, baseline);
+    await writer.flush();
+
+    const reader = createCache(storage);
+    expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace.links).toEqual(
+      workspace.links,
+    );
+    const restored = await reader.readDirectory(SERVER_ID);
+    expect(restored.workspaces.get(workspace.id)?.links).toEqual(workspace.links);
+    expect(restored.checkpoint).toEqual(baseline.checkpoint);
+  });
+
+  it.each([
+    { readMode: "directory", read: (cache: ReplicaCache) => cache.readDirectory(SERVER_ID) },
+    {
+      readMode: "targeted workspace",
+      read: (cache: ReplicaCache) => cache.readWorkspace(SERVER_ID, "workspace-1"),
+    },
+  ])("refetches cached workspaces that dropped links on a $readMode read", async ({ read }) => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const baseline = directory({
+      agents: { generation: "g", afterSeq: 12 },
+      projects: { generation: "g", afterSeq: 4 },
+      workspaces: { generation: "g", afterSeq: 7 },
+    });
+    writer.replaceDirectoryBaseline(SERVER_ID, baseline);
+    writer.commitTimeline(SERVER_ID, "agent-1", timeline());
+    await writer.flush();
+    const key = `${SERVER_ID}:workspace:workspace-1`;
+    const row = storage.rows.get(key);
+    if (!row) throw new Error("Expected the stored workspace row");
+    const payload: Record<string, unknown> = JSON.parse(row.payload);
+    delete payload.links;
+    storage.rows.set(key, { ...row, payload: JSON.stringify(payload) });
+
+    const reader = createCache(storage);
+    await read(reader);
+    const restored = await reader.readDirectory(SERVER_ID);
+    expect(restored.workspaces.size).toBe(0);
+    expect(restored.agents.get("agent-1")?.title).toBe("Cached agent");
+    expect(restored.projects.get("project-1")?.projectDisplayName).toBe("Paseo");
+    expect(restored.checkpoint).toEqual({
+      agents: { generation: "g", afterSeq: 12 },
+      projects: { generation: "g", afterSeq: 4 },
+    });
+    expect(storage.changes.at(-1)).toMatchObject({
+      deletes: [{ serverId: SERVER_ID, kind: "workspace", id: "workspace-1" }],
+      upserts: [{ serverId: SERVER_ID, kind: "checkpoint", id: "singleton" }],
+    });
+    expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
+
+    reader.replaceDirectoryBaseline(SERVER_ID, baseline);
+    await reader.flush();
+    const reopened = await createCache(storage).readDirectory(SERVER_ID);
+    expect(reopened.workspaces.get("workspace-1")?.links).toEqual([]);
+    expect(reopened.checkpoint).toEqual(baseline.checkpoint);
+  });
+
   it("preserves pending timeline updates across directory baseline replacement", async () => {
     const storage = new MemoryStorage();
     const writer = createCache(storage);

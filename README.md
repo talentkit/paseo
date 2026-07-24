@@ -1,3 +1,9 @@
+## Fork Differences
+
+This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carries these local changes:
+
+1. **Launch websites from the workspace top bar.** Project scripts can define an HTTP or HTTPS `url`, including a `{workspacePath}` placeholder. Paseo resolves these links for the active workspace and exposes them from the top-bar Open menu, so a service or other project website can be launched directly in the client browser. Links survive app reloads when directory sync resumes from cached state. Older hosts are capability-gated and prompt the user to update instead of attempting a degraded fallback.
+
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
 </p>

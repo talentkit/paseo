@@ -3,6 +3,7 @@ import {
   AgentStatusSchema,
   AgentTimelineItemPayloadSchema,
   WorkspaceGitHubRuntimePayloadSchema,
+  WorkspaceLinkPayloadSchema,
 } from "@getpaseo/protocol/messages";
 import { AgentProviderSchema } from "@getpaseo/protocol/provider-manifest";
 import type { PluginTimelineData } from "@getpaseo/plugin";
@@ -324,6 +325,9 @@ const StoredWorkspaceSchema = z.strictObject({
   archivingAt: z.string().nullable(),
   diffStat: z.strictObject({ additions: z.number(), deletions: z.number() }).nullable(),
   scripts: z.array(WorkspaceScriptSchema),
+  // Rows that dropped links cannot resume from their cached workspace cursor.
+  // Reject them so reconciliation requests a complete workspace snapshot.
+  links: z.array(WorkspaceLinkPayloadSchema),
   gitRuntime: WorkspaceGitRuntimeSchema,
   githubRuntime: WorkspaceGitHubRuntimePayloadSchema,
   forge: z.string().optional(),
@@ -732,6 +736,7 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
       exitCode: script.exitCode,
       terminalId: script.terminalId,
     })),
+    links: workspace.links.map((link) => ({ ...link })),
     gitRuntime: workspace.gitRuntime,
     githubRuntime: workspace.githubRuntime,
     forge: workspace.forge,

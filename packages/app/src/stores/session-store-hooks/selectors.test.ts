@@ -50,6 +50,7 @@ function createWorkspace(
     statusEnteredAt: null,
     diffStat: input.diffStat ?? null,
     scripts: input.scripts ?? [],
+    links: input.links ?? [],
   };
 }
 
