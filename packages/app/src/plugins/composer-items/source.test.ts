@@ -334,6 +334,7 @@ describe("a Command Center item reaching an agent's composer by id", () => {
     archivingAt: null,
     diffStat: null,
     scripts: [],
+    links: [],
   };
 
   function markForReview(rejection?: Error) {

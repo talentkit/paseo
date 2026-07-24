@@ -55,6 +55,7 @@ function workspace(input?: Partial<WorkspaceDescriptor>): WorkspaceDescriptor {
     diffStat: null,
     scripts: [],
     ...input,
+    links: input?.links ?? [],
   };
 }
 
