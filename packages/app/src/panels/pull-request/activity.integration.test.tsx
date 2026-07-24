@@ -130,6 +130,7 @@ beforeEach(async () => {
           archivingAt: null,
           diffStat: null,
           scripts: [],
+          links: [],
         },
       ],
     ]),

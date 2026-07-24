@@ -47,6 +47,7 @@ function workspace(id: string): WorkspaceDescriptor {
     statusEnteredAt: null,
     diffStat: null,
     scripts: [],
+    links: [],
   };
 }
 

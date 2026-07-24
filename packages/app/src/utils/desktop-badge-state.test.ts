@@ -23,6 +23,7 @@ function workspace(id: string, status: WorkspaceDescriptor["status"]): Workspace
     statusEnteredAt: null,
     diffStat: null,
     scripts: [],
+    links: [],
   };
 }
 
