@@ -3567,6 +3567,7 @@ function WorkspaceScreenContent({
           <WorkspaceOpenInEditorButton
             serverId={normalizedServerId}
             cwd={workspaceDirectory}
+            links={workspaceDescriptor?.links}
             activeFile={activeFileLocation}
             hideLabels
           />

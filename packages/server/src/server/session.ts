@@ -874,6 +874,8 @@ export class Session {
     this.projectConfigSession = new ProjectConfigSession({
       host: {
         emit: (msg) => this.emit(msg),
+        refreshWorkspaceDescriptors: (repoRoot) =>
+          this.refreshWorkspaceDescriptorsForProjectRoot(repoRoot),
       },
       projectRegistry: this.projectRegistry,
       logger: this.sessionLogger,
@@ -4375,6 +4377,7 @@ export class Session {
       activityAt: null,
       diffStat,
       scripts: this.buildWorkspaceScriptPayloadSnapshot(workspace, resolvedProjectRecord),
+      links: this.workspaceScripts.buildLinks(workspace),
       ...(resolvedProjectRecord
         ? {
             project: await this.buildProjectPlacementForWorkspace(workspace, resolvedProjectRecord),
@@ -4466,6 +4469,7 @@ export class Session {
       activityAt: null,
       diffStat: { additions: 0, deletions: 0 },
       scripts: [],
+      links: this.workspaceScripts.buildLinks(result.workspace),
       gitRuntime: {
         currentBranch: result.worktree.branchName || null,
         remoteUrl: null,
@@ -4929,6 +4933,19 @@ export class Session {
       return;
     }
     await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds, options);
+  }
+
+  private async refreshWorkspaceDescriptorsForProjectRoot(repoRoot: string): Promise<void> {
+    const project = (await this.projectRegistry.list()).find(
+      (candidate) => !candidate.archivedAt && candidate.rootPath === repoRoot,
+    );
+    if (!project) {
+      return;
+    }
+    const workspaceIds = (await this.workspaceRegistry.list())
+      .filter((workspace) => !workspace.archivedAt && workspace.projectId === project.projectId)
+      .map((workspace) => workspace.workspaceId);
+    await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds);
   }
 
   private async handleFetchAgents(
