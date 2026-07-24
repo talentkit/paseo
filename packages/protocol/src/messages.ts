@@ -3716,6 +3716,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
+        // COMPAT(workspaceLinks): added in v0.2.0, remove after 2027-01-24.
+        workspaceLinks: z.boolean().optional(),
       })
       .optional(),
   })
@@ -3922,6 +3924,11 @@ export const WorkspaceScriptPayloadSchema = z.object({
   terminalId: z.string().nullable().optional().default(null),
 });
 
+export const WorkspaceLinkPayloadSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+});
+
 const WorkspaceGitRuntimePayloadSchema = z
   .object({
     currentBranch: z.string().nullable().optional(),
@@ -4038,6 +4045,8 @@ export const WorkspaceDescriptorPayloadSchema = z
       .nullable()
       .optional(),
     scripts: z.array(WorkspaceScriptPayloadSchema).default([]),
+    // COMPAT(workspaceLinks): added in v0.2.0, remove after 2027-01-24.
+    links: z.array(WorkspaceLinkPayloadSchema).optional(),
     gitRuntime: WorkspaceGitRuntimePayloadSchema,
     // COMPAT(githubRuntimeName): legacy wire-field name now carries
     // forge-neutral runtime data. Introduce and migrate to a neutral
@@ -7071,6 +7080,7 @@ export type ProjectListResponseMessage = z.infer<typeof ProjectListResponseMessa
 export type WorkspaceScriptLifecycle = z.infer<typeof WorkspaceScriptLifecycleSchema>;
 export type WorkspaceScriptHealth = z.infer<typeof WorkspaceScriptHealthSchema>;
 export type WorkspaceScriptPayload = z.infer<typeof WorkspaceScriptPayloadSchema>;
+export type WorkspaceLinkPayload = z.infer<typeof WorkspaceLinkPayloadSchema>;
 export type FetchAgentsResponseMessage = z.infer<typeof FetchAgentsResponseMessageSchema>;
 export type FetchAgentHistoryResponseMessage = z.infer<
   typeof FetchAgentHistoryResponseMessageSchema

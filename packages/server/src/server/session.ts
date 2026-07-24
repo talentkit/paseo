@@ -183,7 +183,10 @@ import { ProviderCatalogSession } from "./session/provider/provider-catalog-sess
 import { UsageSession } from "./session/usage/usage-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
-import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
+import {
+  canonicalizeProjectConfigRoot,
+  ProjectConfigSession,
+} from "./session/project-config/project-config-session.js";
 import { DaemonSession, type DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import type { DaemonWebSocketRuntimeDiagnosticSnapshot } from "./session/daemon/diagnostics.js";
 import type { HubRelationshipManagement } from "./hub/relationship-controller.js";
@@ -452,6 +455,7 @@ export interface SessionOptions {
   onLifecycleIntent?: (intent: SessionLifecycleIntent) => void;
   onWorkspaceRecovered?: (workspace: PersistedWorkspaceRecord) => Promise<void>;
   publishScriptStatusUpdate?: (message: ScriptStatusUpdateMessage) => void;
+  onProjectConfigChanged?: (repoRoot: string) => Promise<void>;
   logger: pino.Logger;
   downloadTokenStore: DownloadTokenStore;
   pushNotifications: PushNotifications;
@@ -813,6 +817,7 @@ export class Session {
       onLifecycleIntent,
       onWorkspaceRecovered,
       publishScriptStatusUpdate,
+      onProjectConfigChanged,
       logger,
       downloadTokenStore,
       pushNotifications,
@@ -1027,6 +1032,9 @@ export class Session {
     this.projectConfigSession = new ProjectConfigSession({
       host: {
         emit: (msg) => this.emit(msg),
+        refreshWorkspaceDescriptors: (repoRoot) =>
+          onProjectConfigChanged?.(repoRoot) ??
+          this.refreshWorkspaceDescriptorsForProjectRoot(repoRoot),
       },
       projectRegistry: this.projectRegistry,
       logger: this.sessionLogger,
@@ -5553,6 +5561,7 @@ export class Session {
       activityAt: null,
       diffStat,
       scripts: this.buildWorkspaceScriptPayloadSnapshot(workspace, resolvedProjectRecord),
+      links: this.workspaceScripts.buildLinks(workspace, resolvedProjectRecord),
       ...(resolvedProjectRecord
         ? {
             project: await this.buildProjectPlacementForWorkspace(workspace, resolvedProjectRecord),
@@ -5647,6 +5656,7 @@ export class Session {
       activityAt: null,
       diffStat: { additions: 0, deletions: 0 },
       scripts: [],
+      links: this.workspaceScripts.buildLinks(result.workspace, projectRecord),
       gitRuntime: {
         currentBranch: result.worktree.branchName || null,
         remoteUrl: null,
@@ -6109,6 +6119,24 @@ export class Session {
       return;
     }
     await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds, options);
+  }
+
+  private async refreshWorkspaceDescriptorsForProjectRoot(repoRoot: string): Promise<void> {
+    const project = (await this.projectRegistry.list()).find(
+      (candidate) =>
+        !candidate.archivedAt && canonicalizeProjectConfigRoot(candidate.rootPath) === repoRoot,
+    );
+    if (!project) {
+      return;
+    }
+    const workspaceIds = (await this.workspaceRegistry.list())
+      .filter((workspace) => !workspace.archivedAt && workspace.projectId === project.projectId)
+      .map((workspace) => workspace.workspaceId);
+    await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds);
+  }
+
+  async refreshWorkspaceDescriptorsForExternalProjectRoot(repoRoot: string): Promise<void> {
+    await this.refreshWorkspaceDescriptorsForProjectRoot(repoRoot);
   }
 
   private async handleFetchAgents(
