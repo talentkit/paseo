@@ -46,6 +46,7 @@ function workspaceDescriptor(input: {
     statusEnteredAt: input.statusEnteredAt ?? null,
     diffStat: null,
     scripts: [],
+    links: [],
   };
 }
 
