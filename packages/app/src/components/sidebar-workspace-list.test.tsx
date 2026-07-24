@@ -96,6 +96,7 @@ function workspace(input: {
     archivingAt: null,
     diffStat: null,
     scripts: input.scripts ?? [],
+    links: [],
   };
 }
 
