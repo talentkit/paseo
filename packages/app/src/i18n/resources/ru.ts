@@ -434,6 +434,7 @@ export const ru: TranslationResources = {
         waiting: "Ожидание вывода настройки",
       },
       waiting: "Настройка рабочего места...",
+      waitingForWorkspace: "Ожидание завершения настройки рабочей области",
       empty: {
         noCommands: "Для этой рабочей области не выполнялись команды настройки.",
       },

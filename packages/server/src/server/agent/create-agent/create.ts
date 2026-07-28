@@ -26,6 +26,7 @@ import {
   emitLiveTimelineItemIfAgentKnown,
 } from "../timeline-append.js";
 import { resolveCreateAgentIntent } from "./intent.js";
+import type { WorkspaceSetupReadiness } from "../../workspace-setup-readiness.js";
 
 export interface CreateAgentSessionWorktreeResult {
   sessionConfig: AgentSessionConfig;
@@ -43,6 +44,7 @@ export interface CreateAgentCommandDependencies {
   worktreesRoot?: string;
   terminalManager?: TerminalManager | null;
   providerSnapshotManager: Pick<ProviderSnapshotManager, "resolveCreateConfig">;
+  workspaceSetupReadiness: Pick<WorkspaceSetupReadiness, "waitUntilReady">;
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
   // Mints a fresh directory workspace for a cwd and returns its id.
   ensureWorkspaceForCreate?: EnsureWorkspaceForCreate;
@@ -238,6 +240,10 @@ async function resolveSessionCreateAgent(
     input.worktreeName,
     input.firstAgentContext,
   );
+  const workspaceId = requireResolvedWorkspaceId(
+    setupContinuation ? createdWorkspaceId : input.workspaceId,
+  );
+  await dependencies.workspaceSetupReadiness.waitUntilReady(workspaceId);
   // Validate the requested mode against the provider's modes for the resolved
   // cwd. The app remembers mode preferences globally, so a saved mode can be
   // stale for a workspace whose provider config no longer defines it — reject
@@ -274,8 +280,6 @@ async function resolveSessionCreateAgent(
           ...(clientMessageId ? { clientMessageId } : {}),
         }
       : undefined;
-  const workspaceId = setupContinuation ? createdWorkspaceId : input.workspaceId;
-
   return {
     config: sessionConfig,
     createOptions: {
@@ -286,7 +290,7 @@ async function resolveSessionCreateAgent(
       // A legacy git/worktreeName worktree creates a fresh workspace, so the
       // agent belongs to that workspace, not the source one. createdWorkspaceId
       // is the freshly created worktree's workspace.
-      workspaceId: requireResolvedWorkspaceId(workspaceId),
+      workspaceId,
     },
     prompt: hasPromptContent ? prompt : undefined,
     runOptions,
@@ -334,6 +338,7 @@ async function resolveMcpCreateAgent(
       cwd: resolvedCwd,
     }),
   });
+  await dependencies.workspaceSetupReadiness.waitUntilReady(intent.workspaceId);
   const resolvedCreateConfig = await resolveMcpProviderCreateConfig({
     dependencies,
     input,

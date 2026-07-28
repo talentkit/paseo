@@ -121,6 +121,7 @@ import { createGitHubService } from "../services/github-service.js";
 import { createPaseoWorktree as createRegisteredPaseoWorktree } from "./paseo-worktree-service.js";
 import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
 import { createPaseoWorktreeWorkflow } from "./worktree-session.js";
+import { WorkspaceSetupReadiness } from "./workspace-setup-readiness.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import type { OpenAiSpeechProviderConfig } from "./speech/providers/openai/config.js";
 import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.js";
@@ -540,6 +541,39 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   return initialConfig;
 }
 
+interface RestoreWorkspaceSetupReadinessInput {
+  workspaceRegistry: FileBackedWorkspaceRegistry;
+  workspaceSetupReadiness: WorkspaceSetupReadiness;
+  markInterrupted: (workspaceId: string, error: string) => Promise<void>;
+}
+
+async function restoreWorkspaceSetupReadiness({
+  workspaceRegistry,
+  workspaceSetupReadiness,
+  markInterrupted,
+}: RestoreWorkspaceSetupReadinessInput): Promise<void> {
+  for (const workspace of await workspaceRegistry.list()) {
+    if (workspace.archivedAt || !workspace.worktreeRoot) continue;
+    if (workspace.setupStatus === "pending") {
+      const interruptionError = "Workspace setup was interrupted by a daemon restart";
+      await markInterrupted(workspace.workspaceId, interruptionError);
+      workspaceSetupReadiness.restoreInterrupted(
+        workspace.workspaceId,
+        workspace.worktreeRoot,
+        workspace.branch,
+        interruptionError,
+      );
+    } else if (workspace.setupStatus === "failed") {
+      workspaceSetupReadiness.restoreInterrupted(
+        workspace.workspaceId,
+        workspace.worktreeRoot,
+        workspace.branch,
+        workspace.setupError ?? "Workspace setup failed",
+      );
+    }
+  }
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -796,6 +830,23 @@ export async function createPaseoDaemon(
     path.join(config.paseoHome, "projects", "workspaces.json"),
     logger,
   );
+  const updateWorkspaceSetupStatus = async (
+    workspaceId: string,
+    setupStatus: "pending" | "completed" | "failed",
+    setupError: string | null,
+  ): Promise<void> => {
+    await workspaceRegistry.update(workspaceId, (workspace) => ({
+      ...workspace,
+      setupStatus,
+      setupError,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+  const workspaceSetupReadiness = new WorkspaceSetupReadiness({
+    markPending: (workspaceId) => updateWorkspaceSetupStatus(workspaceId, "pending", null),
+    markCompleted: (workspaceId) => updateWorkspaceSetupStatus(workspaceId, "completed", null),
+    markFailed: (workspaceId, error) => updateWorkspaceSetupStatus(workspaceId, "failed", error),
+  });
   const chatService = new FileBackedChatService({
     paseoHome: config.paseoHome,
     logger,
@@ -855,10 +906,17 @@ export async function createPaseoDaemon(
     workspaceGitService,
     logger,
   });
+  await restoreWorkspaceSetupReadiness({
+    workspaceRegistry,
+    workspaceSetupReadiness,
+    markInterrupted: (workspaceId, error) =>
+      updateWorkspaceSetupStatus(workspaceId, "failed", error),
+  });
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
     releaseWorkspaceServicePortPlan(workspaceId);
+    workspaceSetupReadiness.forget(workspaceId);
   };
   const workspaceReconciliation = new WorkspaceReconciliationService({
     serverId,
@@ -1035,10 +1093,13 @@ export async function createPaseoDaemon(
         },
         autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
           workspaceAutoName.scheduleForWorktree(autoNameInput),
+        workspaceSetupReadiness,
         emitWorkspaceUpdateForWorkspaceId: async (workspaceId) => {
           await emitWorkspaceUpdatesExternal([workspaceId]);
         },
-        cacheWorkspaceSetupSnapshot: () => {},
+        cacheWorkspaceSetupSnapshot: (workspaceId, snapshot) => {
+          return workspaceSetupReadiness.setSnapshot(workspaceId, snapshot);
+        },
         emit: emitExternalSessionMessage,
         sessionLogger: logger,
         terminalManager,
@@ -1063,6 +1124,7 @@ export async function createPaseoDaemon(
     worktreesRoot: config.worktreesRoot,
     terminalManager,
     providerSnapshotManager,
+    workspaceSetupReadiness,
     createPaseoWorktree: createPaseoWorktreeForTools,
     ensureWorkspaceForCreate: ensureWorkspaceForCreateAndBroadcastExternal,
   };
@@ -1246,6 +1308,7 @@ export async function createPaseoDaemon(
     getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
     scheduleService,
     providerSnapshotManager,
+    workspaceSetupReadiness,
     github,
     workspaceGitService,
     findWorkspaceIdForCwd: findWorkspaceIdForCwdExternal,
@@ -1564,6 +1627,7 @@ export async function createPaseoDaemon(
               serviceProxyPublicBaseUrl,
               browserToolsBroker,
               hubRelationships,
+              workspaceSetupReadiness,
             );
             relayRuntime = createRelayRuntime({
               config: {
