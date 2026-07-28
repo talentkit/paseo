@@ -76,6 +76,7 @@ import {
   openPreferredWorkspacePreview,
   openPreferredWorkspaceTarget,
   openWorkspaceTargetBeside,
+  openWorkspaceTargetAtLocation,
 } from "@/workspace-tabs/open-beside";
 import { openWorkspacePullRequest } from "@/workspace-tabs/open-supporting-view";
 import { traceInstant } from "@/performance/native-trace";
@@ -1307,6 +1308,10 @@ function WorkspaceScreenContent({
   const lastMainPaneId = lastMainPaneRef.current.paneId;
   const hasHydratedWorkspaceLayoutStore = useWorkspaceLayoutStoreHydrated();
   const workspaceSetupStatus = getWorkspaceSetupStatus(workspaceDescriptor);
+  const setupRevealRequested = useWorkspaceSetupStore((state) =>
+    persistenceKey ? state.requestedSetupRevealKeys.has(persistenceKey) : false,
+  );
+  const clearSetupRevealRequest = useWorkspaceSetupStore((state) => state.clearSetupRevealRequest);
   const claimFailedSetupSurface = useWorkspaceSetupStore((state) => state.claimFailedSetupSurface);
   const supportsSetupObservation = useHostFeature(normalizedServerId, "workspaceSetupObservation");
   const showWorkspaceSetup = shouldShowWorkspaceSetup(
@@ -1610,6 +1615,40 @@ function WorkspaceScreenContent({
     },
     [navigateToTabId, openWorkspaceTabFocused, persistenceKey],
   );
+
+  useEffect(() => {
+    if (
+      !isRouteFocused ||
+      !hasHydratedWorkspaceLayoutStore ||
+      !persistenceKey ||
+      !setupRevealRequested ||
+      workspaceSetupStatus === null
+    )
+      return;
+    if (workspaceSetupStatus !== "completed") {
+      const target = normalizeWorkspaceTabTarget({
+        kind: "setup",
+        workspaceId: normalizedWorkspaceId,
+      });
+      if (!target) return;
+      const tabId = openWorkspaceTargetAtLocation({
+        workspaceKey: persistenceKey,
+        target,
+        location: "side",
+      });
+      if (!tabId) return;
+    }
+    clearSetupRevealRequest({ serverId: normalizedServerId, workspaceId: normalizedWorkspaceId });
+  }, [
+    isRouteFocused,
+    hasHydratedWorkspaceLayoutStore,
+    persistenceKey,
+    setupRevealRequested,
+    workspaceSetupStatus,
+    normalizedWorkspaceId,
+    normalizedServerId,
+    clearSetupRevealRequest,
+  ]);
 
   useEffect(() => {
     if (!isRouteFocused) {

@@ -1,3 +1,4 @@
+import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import type {
   CreateAgentRequestOptions,
   CreateWorkspaceRequestOptions,
@@ -330,6 +331,10 @@ async function createMultiplicityWorkspace(input: {
     throw new Error(payload.error ?? input.createFailedMessage);
   }
   const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
+  if (isWorktree)
+    useWorkspaceSetupStore
+      .getState()
+      .requestSetupReveal({ serverId: input.serverId, workspaceId: normalizedWorkspace.id });
   const workspaceForInitialMerge = input.withInitialAgent
     ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
     : normalizedWorkspace;

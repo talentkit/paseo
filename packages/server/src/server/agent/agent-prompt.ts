@@ -18,9 +18,10 @@ export type AgentRunController = Pick<
   | "replaceAgentRun"
   | "steerOrReplaceActiveTurn"
   | "streamAgent"
-> & {
-  reloadAgentSession(agentId: string): Promise<unknown>;
-};
+> &
+  Partial<Pick<AgentManager, "isAgentWaitingForWorkspaceSetup">> & {
+    reloadAgentSession(agentId: string): Promise<unknown>;
+  };
 
 export interface StartAgentRunOptions {
   /** Called after selecting the run, before consuming its events. */
@@ -32,7 +33,7 @@ export interface StartAgentRunOptions {
   clearPendingPermissions?: boolean;
 }
 
-export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started";
+export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started" | "queued";
 
 async function steerOrReplaceActiveRun(
   agentManager: AgentRunController,
@@ -87,6 +88,9 @@ async function drainAgentRunIterator(
   }
 }
 
+function isAgentRunQueued(agentManager: AgentRunController, agentId: string): boolean {
+  return agentManager.isAgentWaitingForWorkspaceSetup?.(agentId) ?? false;
+}
 export async function startAgentRun(
   agentManager: AgentRunController,
   agentId: string,
@@ -134,6 +138,7 @@ async function startAgentRunInner(
   options?: StartAgentRunOptions,
 ): Promise<{ disposition: PromptDispatchDisposition }> {
   const snapshot = agentManager.getAgent(agentId);
+  const queued = isAgentRunQueued(agentManager, agentId);
   const steered = await steerOrReplaceActiveRun(agentManager, agentId, prompt, options);
   if (steered?.disposition === "steered") {
     options?.onDispatch?.("steered");
@@ -187,7 +192,7 @@ async function startAgentRunInner(
       logger.error({ err: error, agentId }, "Agent stream failed");
     }
   })();
-  return { disposition: "turn_started" };
+  return { disposition: queued ? "queued" : "turn_started" };
 }
 
 /**
@@ -366,14 +371,14 @@ export async function sendPreparedPromptToAgent(
 
 export async function startCreatedAgentInitialPrompt(
   params: StartCreatedAgentInitialPromptParams,
-): Promise<ManagedAgent> {
+): Promise<{ snapshot: ManagedAgent; queued: boolean }> {
   const currentSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
   if (!currentSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
 
   if (params.prompt === null) {
-    return currentSnapshot;
+    return { snapshot: currentSnapshot, queued: false };
   }
 
   const delivery = prepareAgentMessage(
@@ -397,5 +402,5 @@ export async function startCreatedAgentInitialPrompt(
   if (!refreshedSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
-  return refreshedSnapshot;
+  return { snapshot: refreshedSnapshot, queued: dispatchResult.disposition === "queued" };
 }

@@ -31,15 +31,19 @@ export class WorkspaceSetupObservation {
   }
 
   status(
-    workspace: Pick<PersistedWorkspaceRecord, "workspaceId" | "untrustedSource">,
+    workspace: Pick<PersistedWorkspaceRecord, "workspaceId" | "untrustedSource" | "setupStatus">,
   ): WorkspaceSetupSnapshot["status"] | null {
     const snapshot = this.snapshots.get(workspace.workspaceId);
     if (snapshot) return this.summary(snapshot);
-    return workspace.untrustedSource ? "blocked" : null;
+    if (workspace.untrustedSource) return "blocked";
+    if (workspace.setupStatus === "pending") return "running";
+    if (workspace.setupStatus === "failed") return "failed";
+    return null;
   }
 
   private summary(snapshot: WorkspaceSetupSnapshot): WorkspaceSetupSnapshot["status"] | null {
     if (
+      snapshot.status === "running" ||
       snapshot.status === "failed" ||
       snapshot.status === "blocked" ||
       snapshot.error !== null ||

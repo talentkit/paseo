@@ -41,6 +41,9 @@ interface WorkspaceSetupStoreState {
     | (PendingWorkspaceSetup & { creationId: string; worktreeSlug: string })
     | null;
   snapshots: Record<string, WorkspaceSetupSnapshot>;
+  requestedSetupRevealKeys: Set<string>;
+  requestSetupReveal: (input: { serverId: string; workspaceId: string }) => void;
+  clearSetupRevealRequest: (input: { serverId: string; workspaceId: string }) => void;
   surfacedFailedSetupKeys: Set<string>;
   beginWorkspaceSetup: (value: PendingWorkspaceSetup) => void;
   clearWorkspaceSetup: () => void;
@@ -70,6 +73,23 @@ function buildWorkspaceSetupKey(input: { serverId: string; workspaceId: string }
 export const useWorkspaceSetupStore = create<WorkspaceSetupStoreState>()((set) => ({
   pendingWorkspaceSetup: null,
   snapshots: {},
+  requestedSetupRevealKeys: new Set(),
+  requestSetupReveal: (input) => {
+    const key = buildWorkspaceSetupKey(input);
+    if (key)
+      set((state) => ({
+        requestedSetupRevealKeys: new Set(state.requestedSetupRevealKeys).add(key),
+      }));
+  },
+  clearSetupRevealRequest: (input) => {
+    const key = buildWorkspaceSetupKey(input);
+    if (key)
+      set((state) => {
+        const requestedSetupRevealKeys = new Set(state.requestedSetupRevealKeys);
+        requestedSetupRevealKeys.delete(key);
+        return { requestedSetupRevealKeys };
+      });
+  },
   surfacedFailedSetupKeys: new Set(),
   beginWorkspaceSetup: (value) => {
     set({
@@ -127,14 +147,20 @@ export const useWorkspaceSetupStore = create<WorkspaceSetupStoreState>()((set) =
     }
 
     set((state) => {
-      if (!(key in state.snapshots) && !state.surfacedFailedSetupKeys.has(key)) {
+      if (
+        !(key in state.snapshots) &&
+        !state.requestedSetupRevealKeys.has(key) &&
+        !state.surfacedFailedSetupKeys.has(key)
+      ) {
         return state;
       }
       const next = { ...state.snapshots };
       delete next[key];
       const surfacedFailedSetupKeys = new Set(state.surfacedFailedSetupKeys);
       surfacedFailedSetupKeys.delete(key);
-      return { snapshots: next, surfacedFailedSetupKeys };
+      const requestedSetupRevealKeys = new Set(state.requestedSetupRevealKeys);
+      requestedSetupRevealKeys.delete(key);
+      return { snapshots: next, surfacedFailedSetupKeys, requestedSetupRevealKeys };
     });
   },
   clearServer: (serverId) => {
@@ -142,16 +168,24 @@ export const useWorkspaceSetupStore = create<WorkspaceSetupStoreState>()((set) =
       const nextEntries = Object.entries(state.snapshots).filter(
         ([key]) => !key.startsWith(`${serverId}:`),
       );
+      const requestedSetupRevealKeys = new Set(
+        [...state.requestedSetupRevealKeys].filter((key) => !key.startsWith(`${serverId}:`)),
+      );
       const surfacedFailedSetupKeys = new Set(
         [...state.surfacedFailedSetupKeys].filter((key) => !key.startsWith(`${serverId}:`)),
       );
       if (
         nextEntries.length === Object.keys(state.snapshots).length &&
+        requestedSetupRevealKeys.size === state.requestedSetupRevealKeys.size &&
         surfacedFailedSetupKeys.size === state.surfacedFailedSetupKeys.size
       ) {
         return state;
       }
-      return { snapshots: Object.fromEntries(nextEntries), surfacedFailedSetupKeys };
+      return {
+        snapshots: Object.fromEntries(nextEntries),
+        requestedSetupRevealKeys,
+        surfacedFailedSetupKeys,
+      };
     });
   },
 }));

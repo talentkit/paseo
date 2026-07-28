@@ -388,6 +388,7 @@ function toCreateAgentWorktree(target: CreateAgentWorktreeTarget | undefined) {
   if (target.mode === "branch-off") {
     return {
       worktreeName: target.newBranch,
+      branchName: target.newBranch,
       baseBranch: target.base,
       action: "branch-off" as const,
     };

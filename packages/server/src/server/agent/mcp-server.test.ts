@@ -84,6 +84,7 @@ import type { DaemonConfigStore } from "../daemon-config-store.js";
 import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-tools/broker.js";
 import type { BrowserToolsResponsePayload } from "../browser-tools/errors.js";
 import { createWorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
+import { WorkspaceSetupReadiness } from "../workspace-setup-readiness.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
@@ -806,6 +807,7 @@ function createPaseoWorktreeForMcpTest(options: {
     emitWorkspaceUpdateForCwd: async (cwd) => {
       const workspace = Array.from(workspaces.values()).find((record) => record.cwd === cwd);
       options.broadcasts.push(z.string().parse(workspace?.workspaceId));
+      options.onWorkspaceNameApplied?.();
     },
     emitWorkspaceUpdateForWorkspaceId: async (workspaceId) => {
       options.broadcasts.push(workspaceId);
@@ -830,6 +832,9 @@ function createPaseoWorktreeForMcpTest(options: {
         warmWorkspaceGitData: async () => {},
         autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
           workspaceAutoName.scheduleForWorktree(autoNameInput),
+        generateWorkspaceNameForFirstAgent: (nameInput) =>
+          workspaceAutoName.generateForWorktreeCreation(nameInput),
+        workspaceSetupReadiness: new WorkspaceSetupReadiness(),
         emitWorkspaceUpdateForWorkspaceId: async (workspaceId) => {
           options.broadcasts.push(workspaceId);
         },

@@ -28,6 +28,10 @@ export function deriveEffectiveWorkspaceStatus(input: {
     return { status: "running", enteredAt: pendingStartedAt };
   }
 
+  if (input.workspace.setupStatus === "running") {
+    return { status: "running", enteredAt: input.workspace.statusEnteredAt };
+  }
+
   const rootAgentActivity = input.workspaceAgentActivity?.get(input.workspace.id);
   if (rootAgentActivity && rootAgentActivity.status !== "done") {
     return rootAgentActivity;
