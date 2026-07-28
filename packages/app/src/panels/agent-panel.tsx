@@ -1218,6 +1218,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
         <AgentStreamSection
           streamViewRef={streamViewRef}
           serverId={serverId}
+          workspaceId={workspaceId}
           agentId={agentId}
           agent={effectiveAgent}
           draft={draft}
@@ -1406,6 +1407,7 @@ function SheetAgentFacts({ serverId, agentId }: { serverId: string; agentId: str
 const AgentStreamSection = memo(function AgentStreamSection({
   streamViewRef,
   serverId,
+  workspaceId,
   agentId,
   agent,
   draft,
@@ -1419,6 +1421,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
 }: {
   streamViewRef: React.RefObject<AgentStreamViewHandle | null>;
   serverId: string;
+  workspaceId: string;
   agentId?: string;
   agent: AgentScreenAgent | null;
   draft: DraftConversation | null;
@@ -1430,7 +1433,11 @@ const AgentStreamSection = memo(function AgentStreamSection({
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
+  const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
+  const isWorkspaceSetupRunning = useSessionStore(
+    (state) => state.sessions[serverId]?.workspaces.get(workspaceId)?.setupStatus === "running",
+  );
   // The track bar's space is reserved whenever the bar is mounted, pills or not: pills come and go
   // every turn, and the transcript must not jump with them.
   const bottomOverlayTailClearance = hasActiveComposer
@@ -1523,6 +1530,9 @@ const AgentStreamSection = memo(function AgentStreamSection({
       toast={toast}
       pendingMessageSubmissions={pendingMessageSubmissions}
       turnPresentation={turnPresentation}
+      runningStatusLabel={
+        isWorkspaceSetupRunning ? t("workspace.setup.waitingForWorkspace") : undefined
+      }
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );

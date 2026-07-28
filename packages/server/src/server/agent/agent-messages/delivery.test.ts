@@ -1117,7 +1117,11 @@ function createRecipient(
     async person(
       prompt: string,
       messageId: string,
-      outcome: { fail?: Error; started?: Promise<void> } = {},
+      outcome: {
+        fail?: Error;
+        started?: Promise<void>;
+        disposition?: "turn_started" | "queued";
+      } = {},
     ) {
       const prompts: AgentPromptInput[] = [];
       const result = await delivery
@@ -1131,7 +1135,7 @@ function createRecipient(
           received.push(...(joinedIds ?? [messageId]));
           running = true;
           return {
-            disposition: "turn_started" as const,
+            disposition: outcome.disposition ?? "turn_started",
             started: outcome.started ?? Promise.resolve(),
           };
         })
@@ -1694,36 +1698,39 @@ test("a held interrupt waits like any other message once a later message release
   await recipient.delivery.close();
 });
 
-test("queued messages return to the queue when the provider rejects the person's turn", async () => {
-  const recipient = createRecipient();
-  const report = recipient.delivery.enqueue({
-    recipientId: "recipient",
-    source: { kind: "agent-message", agentId: "sender" },
-    messageId: "report",
-    prompt: "report",
-  });
-  await recipient.tick();
+test.each(["turn_started", "queued"] as const)(
+  "queued messages return when the provider rejects a %s person turn",
+  async (disposition) => {
+    const recipient = createRecipient();
+    const report = recipient.delivery.enqueue({
+      recipientId: "recipient",
+      source: { kind: "agent-message", agentId: "sender" },
+      messageId: "report",
+      prompt: "report",
+    });
+    await recipient.tick();
 
-  let rejectStart!: (error: Error) => void;
-  const started = new Promise<void>((_resolve, reject) => {
-    rejectStart = reject;
-  });
-  void started.catch(() => undefined);
-  const person = await recipient.person("hello", "person-1", { started });
-  expect(person.result).toMatchObject({ disposition: "turn_started" });
-  expect(person.ids).toEqual(["report", "person-1"]);
+    let rejectStart!: (error: Error) => void;
+    const started = new Promise<void>((_resolve, reject) => {
+      rejectStart = reject;
+    });
+    void started.catch(() => undefined);
+    const person = await recipient.person("hello", "person-1", { started, disposition });
+    expect(person.result).toMatchObject({ disposition });
+    expect(person.ids).toEqual(["report", "person-1"]);
 
-  // An interrupt sent while the provider decides must not overtake the older report.
-  recipient.send("interrupt", "pause");
-  await recipient.settle();
-  expect(recipient.sent).toEqual([]);
+    // An interrupt sent while the provider decides must not overtake the older report.
+    recipient.send("interrupt", "pause");
+    await recipient.settle();
+    expect(recipient.sent).toEqual([]);
 
-  rejectStart(new Error("provider rejected the turn"));
-  await recipient.settle();
-  expect(recipient.sent.map((dispatch) => dispatch.ids)).toEqual([["report", "pause"]]);
-  await expect(report.dispatched).resolves.toBe("turn_started");
-  await recipient.delivery.close();
-});
+    rejectStart(new Error("provider rejected the turn"));
+    await recipient.settle();
+    expect(recipient.sent.map((dispatch) => dispatch.ids)).toEqual([["report", "pause"]]);
+    await expect(report.dispatched).resolves.toBe("turn_started");
+    await recipient.delivery.close();
+  },
+);
 
 test("a person's prompt that begins with a path is plain text and carries the queue", async () => {
   const recipient = createRecipient();

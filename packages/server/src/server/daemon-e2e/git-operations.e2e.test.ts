@@ -382,7 +382,20 @@ test("runs paseo.json setup asynchronously and reports workspace status", async 
   });
 
   expect(agent.cwd).toContain(path.join(".paseo", "worktrees"));
+  expect(agent.workspaceId).toBeTruthy();
   expect(existsSync(path.join(agent.cwd, "setup-done.txt"))).toBe(false);
+
+  const workspaces = await ctx.client.fetchWorkspaces();
+  expect(
+    workspaces.entries.filter((workspace) => workspace.workspaceDirectory === repoRoot),
+  ).toEqual([]);
+  expect(workspaces.entries).toContainEqual(
+    expect.objectContaining({
+      id: agent.workspaceId,
+      name: "Async Worktree Setup Test",
+      workspaceDirectory: agent.cwd,
+    }),
+  );
 
   writeFileSync(path.join(agent.cwd, "allow-setup"), "ok\n");
 

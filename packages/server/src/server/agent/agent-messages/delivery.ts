@@ -514,9 +514,13 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
   async function ride(riders: Admitted[], result: PromptDispatchResult): Promise<void> {
     if (!riders.length) return;
     const { recipientId } = riders[0]!;
-    if (result.disposition === "turn_started") {
+    if (result.disposition === "turn_started" || result.disposition === "queued") {
       try {
-        await (dependencies.awaitStart?.(recipientId, result.started) ?? result.started);
+        if (result.disposition === "queued") {
+          await result.started;
+        } else {
+          await (dependencies.awaitStart?.(recipientId, result.started) ?? result.started);
+        }
       } catch {
         // The provider rejected the prompt that carried them. They go again, in their place.
         handBack(riders);

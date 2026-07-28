@@ -26,6 +26,7 @@ import { encodeImages } from "@/utils/encode-images";
 import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/workspace-draft-pane-focus";
 import {
   resolveDraftWorkingDirectory,
+  resolveWorkspaceAutoSubmitAttempt,
   shouldAllowEmptyDraftText,
   validateDraftSubmission,
 } from "@/composer/draft/workspace-tab-core";
@@ -484,20 +485,21 @@ export function WorkspaceDraftComposer({
     autoSubmitKeyRef.current = submitKey;
     replaceDraftText("");
     setDraftAttachments([]);
-    const preparedAttempt =
-      initialCreateAttempt?.clientMessageId === submission.clientMessageId
-        ? initialCreateAttempt
-        : null;
+    // The two handoff stores update independently. Read the create attempt
+    // directly so a stale rendered snapshot cannot fall back to a new message
+    // identity and launch the same prompt twice after a long workspace setup.
+    const latestStoredAttempt = useCreateFlowStore.getState().pendingByDraftId[draftId] ?? null;
+    const preparedAttempt = resolveWorkspaceAutoSubmitAttempt({
+      clientMessageId: submission.clientMessageId,
+      renderedAttempt: initialCreateAttempt,
+      latestStoredAttempt,
+    });
     const createPromise = preparedAttempt
       ? continueCreateFromAttempt({
           attempt: preparedAttempt,
           cwd: submission.cwd,
         })
-      : handleCreateFromInput({
-          text: submission.text,
-          attachments: submission.attachments,
-          cwd: submission.cwd,
-        });
+      : Promise.reject(new Error("Workspace draft create attempt is missing"));
     void createPromise.catch(() => {
       replaceDraftText(submission.text);
       setDraftAttachments(composerWorkspaceAttachment.userAttachmentsOnly(submission.attachments));
@@ -507,7 +509,6 @@ export function WorkspaceDraftComposer({
     continueCreateFromAttempt,
     consumePendingAutoSubmit,
     draftId,
-    handleCreateFromInput,
     initialCreateAttempt,
     isReadyForPendingAutoSubmit,
     serverId,

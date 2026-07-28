@@ -457,7 +457,8 @@ async function sendInitialPrompt(
     if (prompt === undefined) {
       return { started: false, liveSnapshot: snapshot };
     }
-    const liveSnapshot = await startCreatedAgentInitialPrompt({
+    const started = await startCreatedAgentInitialPrompt({
+      waitForQueuedStart: resolved.promptFailure === "throw",
       agentStorage: dependencies.agentStorage,
       agentManager: dependencies.agentManager,
       agentId: snapshot.id,
@@ -467,7 +468,7 @@ async function sendInitialPrompt(
       runOptions: resolved.runOptions,
       logger: resolved.promptLogger ?? dependencies.logger,
     });
-    return { started: true, liveSnapshot };
+    return { started: true, liveSnapshot: started.snapshot };
   } catch (error) {
     if (resolved.promptFailure === "throw") {
       throw error;

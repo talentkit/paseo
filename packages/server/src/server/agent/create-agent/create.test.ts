@@ -14,6 +14,7 @@ import { ForegroundPromptStart } from "../agent-run-state.js";
 import type { ManagedAgent } from "../agent-manager.js";
 
 const logger = createTestLogger();
+const readyWorkspaceSetup = { waitUntilReady: async (_workspaceId: string) => {} };
 
 function createRealAgentManager(storage: AgentStorage): AgentManager {
   return new AgentManager({
@@ -77,6 +78,7 @@ test("session create forwards clientMessageId to the initial prompt run options"
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
     logger: createTestLogger(),
     providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+    workspaceSetupReadiness: readyWorkspaceSetup,
   };
 
   await createAgentCommand(dependencies, {
@@ -98,6 +100,80 @@ test("session create forwards clientMessageId to the initial prompt run options"
   );
 });
 
+test("session create returns the agent while workspace setup is still pending", async () => {
+  const snapshot = {
+    id: "agent-after-setup",
+    provider: "codex",
+    cwd: "/tmp/paseo-create-test",
+    runtimeInfo: null,
+  } as ManagedAgent;
+  const createAgent = vi.fn(async () => snapshot);
+  const result = await createAgentCommand(
+    {
+      agentManager: {
+        createAgent,
+        getAgent: vi.fn(() => snapshot),
+      } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+      agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
+      logger,
+      providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      workspaceSetupReadiness: { waitUntilReady: () => new Promise(() => {}) },
+    },
+    {
+      kind: "session",
+      config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+      workspaceId: "ws-setting-up",
+      labels: {},
+      provisionalTitle: null,
+      firstAgentContext: { attachments: [] },
+      buildSessionConfig: async (config) => ({ sessionConfig: config }),
+    },
+  );
+
+  expect(createAgent).toHaveBeenCalledOnce();
+  expect(result.snapshot.id).toBe("agent-after-setup");
+});
+
+test("session create returns the agent when workspace setup has failed", async () => {
+  const snapshot = {
+    id: "agent-after-failed-setup",
+    provider: "codex",
+    cwd: "/tmp/paseo-create-test",
+    runtimeInfo: null,
+  } as ManagedAgent;
+  const createAgent = vi.fn(async () => snapshot);
+  const providerSnapshotManager = createProviderSnapshotManagerStub();
+
+  const result = await createAgentCommand(
+    {
+      agentManager: {
+        createAgent,
+      } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+      agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
+      logger,
+      providerSnapshotManager: providerSnapshotManager.manager,
+      workspaceSetupReadiness: {
+        waitUntilReady: async () => {
+          throw new Error("database setup failed");
+        },
+      },
+    },
+    {
+      kind: "session",
+      config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+      workspaceId: "ws-failed-setup",
+      labels: {},
+      provisionalTitle: null,
+      firstAgentContext: { attachments: [] },
+      buildSessionConfig: async (config) => ({ sessionConfig: config }),
+    },
+  );
+
+  expect(providerSnapshotManager.resolveCreateConfig).toHaveBeenCalledOnce();
+  expect(createAgent).toHaveBeenCalledOnce();
+  expect(result.snapshot.id).toBe("agent-after-failed-setup");
+});
+
 test("session create validates the requested mode against the provider's modes", async () => {
   const snapshot = {
     id: "agent-1",
@@ -117,6 +193,7 @@ test("session create validates the requested mode against the provider's modes",
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
     logger: createTestLogger(),
     providerSnapshotManager: stub.manager,
+    workspaceSetupReadiness: readyWorkspaceSetup,
   };
 
   await expect(
@@ -161,6 +238,7 @@ test("session create applies the resolved mode from the provider create config",
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
     logger: createTestLogger(),
     providerSnapshotManager: stub.manager,
+    workspaceSetupReadiness: readyWorkspaceSetup,
   };
 
   await createAgentCommand(dependencies, {
@@ -203,6 +281,7 @@ test("mcp create accepts provider-only internal input and leaves model undefined
         return {};
       }),
     } as Parameters<typeof createAgentCommand>[0]["providerSnapshotManager"],
+    workspaceSetupReadiness: readyWorkspaceSetup,
   };
 
   await createAgentCommand(dependencies, {
@@ -239,6 +318,7 @@ test("session create stamps the requested workspaceId when no worktree setup run
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        workspaceSetupReadiness: readyWorkspaceSetup,
       },
       {
         kind: "session",
@@ -265,7 +345,13 @@ test("mcp create stamps the new worktree's workspaceId, not the parent's", async
 
   try {
     const { snapshot: parent } = await createAgentCommand(
-      { agentManager, agentStorage: storage, logger, providerSnapshotManager },
+      {
+        agentManager,
+        agentStorage: storage,
+        logger,
+        providerSnapshotManager,
+        workspaceSetupReadiness: readyWorkspaceSetup,
+      },
       {
         kind: "session",
         config: { provider: "codex", cwd: workdir },
@@ -282,6 +368,7 @@ test("mcp create stamps the new worktree's workspaceId, not the parent's", async
         agentStorage: storage,
         logger,
         providerSnapshotManager,
+        workspaceSetupReadiness: readyWorkspaceSetup,
         createPaseoWorktree: fakeWorktreeCreator({
           repoRoot: workdir,
           createdWorkspaceId: "ws-new-worktree",
@@ -332,6 +419,7 @@ test("mcp create exposes the created worktree before dispatching the initial pro
             return {};
           },
         },
+        workspaceSetupReadiness: readyWorkspaceSetup,
         createPaseoWorktree: async () => createdWorktree,
       },
       {
@@ -370,6 +458,7 @@ test("session create keeps the prompt title after the initial prompt settles", a
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        workspaceSetupReadiness: readyWorkspaceSetup,
       },
       {
         kind: "session",
@@ -407,6 +496,7 @@ test("session create keeps an explicit title after the initial prompt settles", 
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+        workspaceSetupReadiness: readyWorkspaceSetup,
       },
       {
         kind: "session",

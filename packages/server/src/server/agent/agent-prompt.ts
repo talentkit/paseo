@@ -24,9 +24,10 @@ export type AgentRunController = Pick<
   | "replaceAgentRun"
   | "steerOrReplaceActiveTurn"
   | "streamAgent"
-> & {
-  reloadAgentSession(agentId: string): Promise<unknown>;
-};
+> &
+  Partial<Pick<AgentManager, "isAgentWaitingForWorkspaceSetup">> & {
+    reloadAgentSession(agentId: string): Promise<unknown>;
+  };
 
 export class AgentTurnBusyError extends Error {}
 
@@ -45,12 +46,12 @@ export interface StartAgentRunOptions {
   clearPendingPermissions?: boolean;
 }
 
-export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started";
+export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started" | "queued";
 
 /** A dispatched prompt. A started turn carries its sender's start outcome. */
 export type PromptDispatchResult =
-  | { disposition: "turn_started"; started: Promise<void> }
-  | { disposition: Exclude<PromptDispatchDisposition, "turn_started"> };
+  | { disposition: "turn_started" | "queued"; started: Promise<void> }
+  | { disposition: Exclude<PromptDispatchDisposition, "turn_started" | "queued"> };
 
 async function steerOrReplaceActiveRun(
   agentManager: AgentRunController,
@@ -112,6 +113,9 @@ async function drainAgentRunIterator(
   }
 }
 
+function isAgentRunQueued(agentManager: AgentRunController, agentId: string): boolean {
+  return agentManager.isAgentWaitingForWorkspaceSetup?.(agentId) ?? false;
+}
 export async function startAgentRun(
   agentManager: AgentRunController,
   agentId: string,
@@ -176,6 +180,7 @@ async function startAgentRunInner(
   promptStart: ForegroundPromptStart,
 ): Promise<PromptDispatchResult> {
   const snapshot = agentManager.getAgent(agentId);
+  const queued = isAgentRunQueued(agentManager, agentId);
   const steered = options?.idleOnly
     ? null
     : await steerOrReplaceActiveRun(agentManager, agentId, prompt, options, promptStart);
@@ -236,6 +241,9 @@ async function startAgentRunInner(
       promptStart.end();
     }
   })();
+  if (queued) {
+    return { disposition: "queued", started: promptStart.started };
+  }
   return { disposition: "turn_started", started: promptStart.started };
 }
 
@@ -290,6 +298,7 @@ export interface SendDirectPromptParams extends SendPromptToAgentParams {
 }
 
 export interface StartCreatedAgentInitialPromptParams {
+  waitForQueuedStart?: boolean;
   agentStorage: AgentStorage;
   agentManager: AgentManager;
   agentId: string;
@@ -462,14 +471,14 @@ export async function sendPreparedPromptToAgent(
 
 export async function startCreatedAgentInitialPrompt(
   params: StartCreatedAgentInitialPromptParams,
-): Promise<ManagedAgent> {
+): Promise<{ snapshot: ManagedAgent; queued: boolean }> {
   const currentSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
   if (!currentSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
 
   if (params.prompt === null) {
-    return currentSnapshot;
+    return { snapshot: currentSnapshot, queued: false };
   }
 
   const delivery = prepareAgentMessage(
@@ -485,6 +494,10 @@ export async function startCreatedAgentInitialPrompt(
     { runOptions: { ...params.runOptions, clientMessageId: delivery.messageId } },
   );
 
+  if (dispatchResult.disposition === "queued" && params.waitForQueuedStart) {
+    // Hub creation must observe provider startup failures after workspace setup finishes.
+    await dispatchResult.started;
+  }
   if (dispatchResult.disposition === "turn_started") {
     await waitForAgentRunStartWithTimeout(
       params.agentManager,
@@ -497,5 +510,8 @@ export async function startCreatedAgentInitialPrompt(
   if (!refreshedSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
-  return refreshedSnapshot;
+  return {
+    snapshot: refreshedSnapshot,
+    queued: dispatchResult.disposition === "queued" && !params.waitForQueuedStart,
+  };
 }
