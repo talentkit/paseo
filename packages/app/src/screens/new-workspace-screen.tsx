@@ -1,4 +1,5 @@
 import { useAddHost } from "@/hosts/add-host";
+import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import type { CreateWorkspaceRequestOptions } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload, CreationSnapshot } from "@getpaseo/protocol/messages";
 import { encodeImages } from "@/utils/encode-images";
@@ -340,6 +341,10 @@ async function createMultiplicityWorkspace(input: {
     throw new Error(payload.error ?? input.createFailedMessage);
   }
   const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
+  if (isWorktree)
+    useWorkspaceSetupStore
+      .getState()
+      .requestSetupReveal({ serverId: input.serverId, workspaceId: normalizedWorkspace.id });
   const workspaceForInitialMerge = input.withInitialAgent
     ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
     : normalizedWorkspace;

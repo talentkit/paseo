@@ -1599,6 +1599,7 @@ export class HubRelationshipHarness {
             agentStorage: storage,
             logger: pino({ level: "silent" }),
             providerSnapshotManager: providerCatalog,
+            workspaceSetupReadiness: { waitUntilReady: async () => {} },
           },
           input,
         ),
