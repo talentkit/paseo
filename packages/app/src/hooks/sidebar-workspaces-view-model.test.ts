@@ -151,6 +151,7 @@ function workspace(input: {
   projectId: string;
   projectDisplayName: string;
   status?: WorkspaceDescriptor["status"];
+  setupStatus?: WorkspaceDescriptor["setupStatus"];
   statusEnteredAt?: Date | null;
 }): WorkspaceDescriptor {
   return {
@@ -165,6 +166,7 @@ function workspace(input: {
     workspaceKind: input.name === "main" ? "local_checkout" : "worktree",
     name: input.name,
     status: input.status ?? "done",
+    setupStatus: input.setupStatus,
     statusEnteredAt: input.statusEnteredAt ?? null,
     archivingAt: null,
     diffStat: null,
@@ -507,6 +509,36 @@ describe("shared sidebar workspace model", () => {
 
     expect(nextEntries.get("srv:one")).toBe(previousEntries.get("srv:one"));
     expect(nextEntries.get("srv:two")).not.toBe(previousEntries.get("srv:two"));
+  });
+
+  it("keeps a workspace busy while its setup is running", () => {
+    const model = buildSidebarWorkspacePlacementModel({
+      projects: [project({ projectKey: "project", workspaceKeys: ["srv:setting-up"] })],
+    });
+    const entries = buildSidebarWorkspaceEntries({
+      placements: model.workspaces,
+      sessions: [
+        {
+          serverId: "srv",
+          workspaceAgentActivity: new Map(),
+          workspaces: new Map([
+            [
+              "setting-up",
+              workspace({
+                id: "setting-up",
+                name: "setting-up",
+                projectId: "project",
+                projectDisplayName: "project",
+                status: "done",
+                setupStatus: "running",
+              }),
+            ],
+          ]),
+        },
+      ],
+    });
+
+    expect(entries.get("srv:setting-up")?.statusBucket).toBe("running");
   });
 
   it("keeps a structurally disambiguated project key in status entries", () => {

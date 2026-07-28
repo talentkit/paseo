@@ -1,6 +1,6 @@
 import type { PluginLifecycle } from "./plugins/lifecycle/index.js";
 import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { getRealpathAwareRelativePath } from "../utils/path.js";
@@ -13,6 +13,7 @@ import {
 } from "./worktree-core.js";
 import {
   mapWorkspaceRelativeCwdToWorktree,
+  getPaseoWorktreesRoot,
   rollbackCreatedPaseoWorktree,
   seedPaseoConfigFile,
   validateBranchSlug,
@@ -31,6 +32,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
+  nameSource?: "first-agent";
   workspaceId?: string;
   projectId?: string;
   title?: string;
@@ -76,8 +78,15 @@ async function createPaseoWorktreeWithPriority(
   input: CreatePaseoWorktreeInput,
   deps: CreatePaseoWorktreeDeps,
 ): Promise<CreatePaseoWorktreeResult> {
-  const workspaceCwdPlan = await planWorkspaceCwdForWorktree(input.cwd, deps.workspaceGitService);
-  const createdWorktree = await createWorktreeCore(input, deps);
+  const preparedInput =
+    input.nameSource === "first-agent"
+      ? await resolveAvailableFirstAgentWorkspaceName(input)
+      : input;
+  const workspaceCwdPlan = await planWorkspaceCwdForWorktree(
+    preparedInput.cwd,
+    deps.workspaceGitService,
+  );
+  const createdWorktree = await createWorktreeCore(preparedInput, deps);
   try {
     if (createdWorktree.created) {
       await deps.lifecycle?.wait("worktree.create.after", {
@@ -88,7 +97,10 @@ async function createPaseoWorktreeWithPriority(
         },
       });
     }
-    await maybeMarkFirstAgentBranchAutoNameEligible({ createdWorktree });
+    await maybeMarkFirstAgentBranchAutoNameEligible({
+      createdWorktree,
+      alreadyNamed: Boolean(preparedInput.branchName?.trim()),
+    });
     const workspaceCwd = mapWorkspaceRelativeCwdToWorktree({
       relativeWorkspaceCwd: workspaceCwdPlan.relativeWorkspaceCwd,
       targetWorktreePath: createdWorktree.worktree.worktreePath,
@@ -105,14 +117,16 @@ async function createPaseoWorktreeWithPriority(
     }
     const workspace = await deps.workspaceProvisioning.createWorkspaceForWorktree({
       sourceCwd: workspaceCwdPlan.inputCwd,
-      projectId: input.projectId,
-      workspaceId: input.workspaceId,
+      projectId: preparedInput.projectId,
+      workspaceId: preparedInput.workspaceId,
       repoRoot: createdWorktree.repoRoot,
       cwd: workspaceCwd,
       worktreeRoot: createdWorktree.worktree.worktreePath,
       branch: createdWorktree.worktree.branchName || null,
       baseBranch: createdWorktree.worktree.comparisonBaseRef,
-      title: input.title?.trim() || resolveFirstAgentPromptTitle(input.firstAgentContext),
+      title:
+        preparedInput.title?.trim() ||
+        resolveFirstAgentPromptTitle(preparedInput.firstAgentContext),
       expectsInitialAgent: Boolean(input.firstAgentContext),
       background: input.background,
       callerWorkspaceId: input.callerWorkspaceId,
@@ -152,6 +166,62 @@ async function createPaseoWorktreeWithPriority(
       },
       error,
     );
+  }
+}
+
+const MAX_FIRST_AGENT_NAME_COLLISION_ATTEMPTS = 50;
+const MAX_GENERATED_WORKSPACE_SLUG_LENGTH = 50;
+
+async function resolveAvailableFirstAgentWorkspaceName(
+  input: CreatePaseoWorktreeInput,
+): Promise<CreatePaseoWorktreeInput> {
+  const requestedBranchName = input.branchName?.trim();
+  const requestedWorktreeSlug = input.worktreeSlug?.trim();
+  if (!requestedBranchName || requestedBranchName !== requestedWorktreeSlug) {
+    throw new Error("Generated workspace branch and directory names must match");
+  }
+
+  const worktreesRoot = await getPaseoWorktreesRoot(
+    input.cwd,
+    input.paseoHome,
+    input.worktreesRoot,
+  );
+  for (let attempt = 0; attempt < MAX_FIRST_AGENT_NAME_COLLISION_ATTEMPTS; attempt += 1) {
+    const suffix = attempt === 0 ? "" : `-${attempt + 1}`;
+    const candidate = appendGeneratedWorkspaceNameSuffix(requestedBranchName, suffix);
+    const branchExists = await localBranchExists(input.cwd, candidate);
+    const worktreePathExists = await pathExists(join(worktreesRoot, candidate));
+    if (!branchExists && !worktreePathExists) {
+      return {
+        ...input,
+        branchName: candidate,
+        worktreeSlug: candidate,
+      };
+    }
+  }
+
+  throw new Error(`Unable to allocate workspace name from ${requestedBranchName}`);
+}
+
+function appendGeneratedWorkspaceNameSuffix(base: string, suffix: string): string {
+  if (!suffix) {
+    return base;
+  }
+  const trimmedBase = base
+    .slice(0, MAX_GENERATED_WORKSPACE_SLUG_LENGTH - suffix.length)
+    .replace(/-+$/g, "");
+  return `${trimmedBase}${suffix}`;
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await stat(targetPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -277,9 +347,14 @@ async function findAvailableBranchName(options: {
 
 async function maybeMarkFirstAgentBranchAutoNameEligible(options: {
   createdWorktree: Awaited<ReturnType<typeof createWorktreeCore>>;
+  alreadyNamed: boolean;
 }): Promise<void> {
   const { createdWorktree } = options;
-  if (!createdWorktree.created || createdWorktree.intent.kind !== "branch-off") {
+  if (
+    options.alreadyNamed ||
+    !createdWorktree.created ||
+    createdWorktree.intent.kind !== "branch-off"
+  ) {
     return;
   }
 

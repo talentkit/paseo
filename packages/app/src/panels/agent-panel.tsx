@@ -1389,7 +1389,11 @@ const AgentStreamSection = memo(function AgentStreamSection({
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
+  const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
+  const isWorkspaceSetupRunning = useSessionStore(
+    (state) => state.sessions[serverId]?.workspaces.get(workspaceId)?.setupStatus === "running",
+  );
   const hasWorkspaceDiffStat = useWorkspaceHasDiffStat(serverId, workspaceId);
   const hasVisibleComposerTracks =
     hasActiveComposer && (hasVisibleAgentTracks || hasWorkspaceDiffStat);
@@ -1457,6 +1461,9 @@ const AgentStreamSection = memo(function AgentStreamSection({
       toast={toast}
       pendingMessageSubmissions={pendingMessageSubmissions}
       turnPresentation={turnPresentation}
+      runningStatusLabel={
+        isWorkspaceSetupRunning ? t("workspace.setup.waitingForWorkspace") : undefined
+      }
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );

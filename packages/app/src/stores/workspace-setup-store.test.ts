@@ -10,6 +10,7 @@ describe("workspace-setup-store", () => {
     useWorkspaceSetupStore.setState({
       pendingWorkspaceSetup: null,
       snapshots: {},
+      requestedSetupRevealKeys: new Set(),
       surfacedFailedSetupKeys: new Set(),
     });
   });
@@ -44,6 +45,23 @@ describe("workspace-setup-store", () => {
     useWorkspaceSetupStore.getState().clearWorkspaceSetup();
 
     expect(useWorkspaceSetupStore.getState().pendingWorkspaceSetup).toBeNull();
+  });
+
+  it("consumes workspace-specific setup reveal requests and removes stale host requests", () => {
+    const store = useWorkspaceSetupStore.getState();
+    store.requestSetupReveal({ serverId: "host", workspaceId: "first" });
+    store.requestSetupReveal({ serverId: "host", workspaceId: "second" });
+    store.requestSetupReveal({ serverId: "other", workspaceId: "third" });
+    store.clearSetupRevealRequest({ serverId: "host", workspaceId: "first" });
+    expect(useWorkspaceSetupStore.getState().requestedSetupRevealKeys).toEqual(
+      new Set(["host:second", "other:third"]),
+    );
+    store.clearServer("host");
+    expect(useWorkspaceSetupStore.getState().requestedSetupRevealKeys).toEqual(
+      new Set(["other:third"]),
+    );
+    store.removeWorkspace({ serverId: "other", workspaceId: "third" });
+    expect(useWorkspaceSetupStore.getState().requestedSetupRevealKeys).toEqual(new Set());
   });
 
   it("uses directory metadata to surface failures without requesting setup details", () => {
