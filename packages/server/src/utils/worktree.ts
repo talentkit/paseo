@@ -449,7 +449,7 @@ export function processCarriageReturns(text: string): string {
 
 async function execSetupCommand(
   command: string,
-  options: { cwd: string; env: NodeJS.ProcessEnv },
+  options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
 ): Promise<WorktreeSetupCommandResult> {
   const startedAt = Date.now();
   const shellInvocation = buildStringCommandShellInvocation({ command });
@@ -457,6 +457,7 @@ async function execSetupCommand(
     const { stdout, stderr } = await execFileAsync(shellInvocation.shell, shellInvocation.args, {
       cwd: options.cwd,
       env: options.env,
+      signal: options.signal,
     });
     return {
       command,
@@ -562,6 +563,8 @@ async function execSetupCommandStreamed(options: {
     });
 
     const abort = () => {
+      const reason = options.signal?.reason;
+      emitOutput("stderr", reason instanceof Error ? reason.message : "Workspace setup canceled");
       termination ??= terminateWithTreeKill(child, {
         gracefulTimeoutMs: 1000,
         forceTimeoutMs: 1000,
@@ -572,7 +575,6 @@ async function execSetupCommandStreamed(options: {
     } else {
       options.signal?.addEventListener("abort", abort, { once: true });
     }
-
     child.stdout?.on("data", (chunk: Buffer | string) => {
       emitOutput("stdout", chunk.toString());
     });
@@ -706,6 +708,7 @@ export async function runWorktreeSetupCommands(options: {
       : await execSetupCommand(cmd, {
           cwd: options.worktreePath,
           env: setupEnv,
+          signal: options.signal,
         });
     results.push(result);
 
@@ -841,10 +844,25 @@ export async function seedPaseoConfigFile(options: {
 }): Promise<void> {
   const sourceConfigPath = join(options.sourceCwd, "paseo.json");
   const targetConfigPath = join(options.targetCwd, "paseo.json");
+  if (await isPaseoConfigCommittedAtHead(options.sourceCwd)) {
+    return;
+  }
   await copyFile(sourceConfigPath, targetConfigPath, fsConstants.COPYFILE_EXCL).catch((error) => {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "EEXIST" && code !== "ENOENT") throw error;
   });
+}
+
+async function isPaseoConfigCommittedAtHead(sourceCwd: string): Promise<boolean> {
+  try {
+    await runGitCommand(["cat-file", "-e", "HEAD:paseo.json"], {
+      cwd: sourceCwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
