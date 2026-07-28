@@ -37,6 +37,7 @@ import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { parseGitRevParsePath, resolveGitRevParsePath } from "./git-rev-parse-path.js";
 import { validateBranchSlug } from "@getpaseo/protocol/branch-slug";
 import { expandTilde, getRealpathAwareRelativePath, isPathInsideRoot } from "./path.js";
+import { terminateWithTreeKill } from "./tree-kill.js";
 
 export { slugify, validateBranchSlug } from "@getpaseo/protocol/branch-slug";
 
@@ -441,7 +442,7 @@ export function processCarriageReturns(text: string): string {
 
 async function execSetupCommand(
   command: string,
-  options: { cwd: string; env: NodeJS.ProcessEnv },
+  options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
 ): Promise<WorktreeSetupCommandResult> {
   const startedAt = Date.now();
   const shellInvocation = buildStringCommandShellInvocation({ command });
@@ -449,6 +450,7 @@ async function execSetupCommand(
     const { stdout, stderr } = await execFileAsync(shellInvocation.shell, shellInvocation.args, {
       cwd: options.cwd,
       env: options.env,
+      signal: options.signal,
     });
     return {
       command,
@@ -478,6 +480,7 @@ async function execSetupCommandStreamed(options: {
   index: number;
   total: number;
   onEvent?: (event: WorktreeSetupCommandProgressEvent) => void;
+  signal?: AbortSignal;
 }): Promise<WorktreeSetupCommandResult> {
   return new Promise((resolvePromise) => {
     const startedAt = Date.now();
@@ -511,6 +514,7 @@ async function execSetupCommandStreamed(options: {
         return;
       }
       settled = true;
+      options.signal?.removeEventListener("abort", abort);
       const result: WorktreeSetupCommandResult = {
         command: options.command,
         cwd: options.cwd,
@@ -548,6 +552,20 @@ async function execSetupCommandStreamed(options: {
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    const abort = () => {
+      const reason = options.signal?.reason;
+      emitOutput("stderr", reason instanceof Error ? reason.message : "Workspace setup canceled");
+      void terminateWithTreeKill(child, {
+        gracefulTimeoutMs: 1_000,
+        forceTimeoutMs: 1_000,
+      }).finally(() => finish(null));
+    };
+    if (options.signal?.aborted) {
+      abort();
+    } else {
+      options.signal?.addEventListener("abort", abort, { once: true });
+    }
 
     child.stdout?.on("data", (chunk: Buffer | string) => {
       emitOutput("stdout", chunk.toString());
@@ -650,6 +668,7 @@ export async function runWorktreeSetupCommands(options: {
   repoRootPath?: string;
   runtimeEnv?: WorktreeRuntimeEnv;
   onEvent?: (event: WorktreeSetupCommandProgressEvent) => void;
+  signal?: AbortSignal;
 }): Promise<WorktreeSetupCommandResult[]> {
   // Read paseo.json from the worktree (it will have the same content as the source repo)
   const setupCommands = getWorktreeSetupCommands(options.worktreePath);
@@ -676,10 +695,12 @@ export async function runWorktreeSetupCommands(options: {
           index: index + 1,
           total: setupCommands.length,
           onEvent: options.onEvent,
+          signal: options.signal,
         })
       : await execSetupCommand(cmd, {
           cwd: options.worktreePath,
           env: setupEnv,
+          signal: options.signal,
         });
     results.push(result);
 
@@ -821,9 +842,24 @@ export async function seedPaseoConfigFile(options: {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  if (await isPaseoConfigCommittedAtHead(options.sourceCwd)) {
+    return;
+  }
   await copyFile(sourceConfigPath, targetConfigPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   });
+}
+
+async function isPaseoConfigCommittedAtHead(sourceCwd: string): Promise<boolean> {
+  try {
+    await runGitCommand(["cat-file", "-e", "HEAD:./paseo.json"], {
+      cwd: sourceCwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

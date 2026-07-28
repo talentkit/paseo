@@ -86,6 +86,7 @@ function createLoopService(options: TestLoopServiceOptions): LoopService {
           agentStorage: options.agentStorage,
           logger: options.logger,
           providerSnapshotManager: providerSnapshotManager as ProviderSnapshotManager,
+          workspaceSetupReadiness: { waitUntilReady: async () => {} },
           ensureWorkspaceForCreate,
         },
         input,

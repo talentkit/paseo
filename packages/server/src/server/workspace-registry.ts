@@ -77,6 +77,8 @@ const PersistedWorkspaceRecordSchema = z.object({
     .transform((value) => value ?? null),
   isPaseoOwnedWorktree: z.boolean().default(false),
   mainRepoRoot: z.string().nullable().default(null),
+  setupStatus: z.enum(["pending", "completed", "failed"]).nullable().default(null),
+  setupError: z.string().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),
@@ -556,6 +558,8 @@ export function createPersistedWorkspaceRecord(input: {
   archivedAt?: string | null;
   autoArchivedChangeRequestUrl?: string | null;
   pinnedAt?: string | null;
+  setupStatus?: "pending" | "completed" | "failed" | null;
+  setupError?: string | null;
 }): PersistedWorkspaceRecord {
   return PersistedWorkspaceRecordSchema.parse({
     ...input,
@@ -568,6 +572,8 @@ export function createPersistedWorkspaceRecord(input: {
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,
     pinnedAt: input.pinnedAt ?? null,
+    setupStatus: input.setupStatus ?? null,
+    setupError: input.setupError ?? null,
   });
 }
 

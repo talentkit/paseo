@@ -2,7 +2,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -48,6 +48,24 @@ async function waitForPathExists(options: {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`Timed out after ${options.timeoutMs}ms waiting for path: ${options.targetPath}`);
+}
+
+async function waitForManagedWorktree(options: {
+  worktreesRoot: string;
+  slug: string;
+  timeoutMs: number;
+}): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < options.timeoutMs) {
+    const groups = await readdir(options.worktreesRoot, { withFileTypes: true }).catch(() => []);
+    for (const group of groups) {
+      if (!group.isDirectory()) continue;
+      const candidate = path.join(options.worktreesRoot, group.name, options.slug);
+      if (existsSync(candidate)) return candidate;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for managed worktree: ${options.slug}`);
 }
 
 async function getAvailablePort(): Promise<number> {
@@ -723,12 +741,13 @@ describe("agent MCP end-to-end (offline)", () => {
     }
   }, 30_000);
 
-  test("create_agent with worktree is async and boots terminals only after setup success", async () => {
+  test("create_agent waits for worktree setup before launching the provider", async () => {
     const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-home-"));
     const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-static-"));
     const repoRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-worktree-repo-"));
     const port = await getAvailablePort();
 
+    const recorder: LaunchRecorder = { recordedLaunches: [] };
     const daemonConfig: PaseoDaemonConfig = {
       listen: `127.0.0.1:${port}`,
       paseoHome,
@@ -737,7 +756,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      agentClients: createMcpRecordingAgentClients(recorder),
       agentStoragePath: path.join(paseoHome, "agents"),
     };
 
@@ -779,33 +798,42 @@ describe("agent MCP end-to-end (offline)", () => {
         stdio: "pipe",
       });
 
-      const result = await withTimeout({
-        promise: client.callTool({
-          name: "create_agent",
-          args: {
-            cwd: repoRoot,
-            title: "MCP worktree setup terminals",
-            provider: "claude/claude-test-model",
-            mode: "bypassPermissions",
-            initialPrompt: "say done and stop",
-            worktreeName: "mcp-worktree-setup-test",
-            baseBranch: "main",
-            background: true,
-          },
-        }),
-        timeoutMs: 2500,
-        label: "create_agent should not block on setup",
+      const createAgent = client.callTool({
+        name: "create_agent",
+        args: {
+          cwd: repoRoot,
+          title: "MCP worktree setup terminals",
+          provider: "claude/claude-test-model",
+          mode: "bypassPermissions",
+          initialPrompt: "say done and stop",
+          worktreeName: "mcp-worktree-setup-test",
+          baseBranch: "main",
+          background: true,
+        },
       });
+      const worktreePath = await waitForManagedWorktree({
+        worktreesRoot: path.join(paseoHome, "worktrees"),
+        slug: "mcp-worktree-setup-test",
+        timeoutMs: 15_000,
+      });
+      expect(existsSync(path.join(worktreePath, "setup-done.txt"))).toBe(false);
+      expect(existsSync(path.join(worktreePath, "dev-terminal.txt"))).toBe(false);
+      expect(recorder.recordedLaunches).toEqual([]);
 
+      await writeFile(path.join(worktreePath, "allow-setup"), "ok\n", "utf8");
+
+      const result = await withTimeout({
+        promise: createAgent,
+        timeoutMs: 15_000,
+        label: "create_agent should finish after setup",
+      });
       const payload = getStructuredContent(result);
       agentId = typeof payload?.agentId === "string" ? payload.agentId : null;
       expect(agentId).toBeTruthy();
-      const worktreePath = typeof payload?.cwd === "string" ? payload.cwd : "";
-      expect(worktreePath).toContain(`${path.sep}worktrees${path.sep}`);
-      expect(existsSync(path.join(worktreePath, "setup-done.txt"))).toBe(false);
-      expect(existsSync(path.join(worktreePath, "dev-terminal.txt"))).toBe(false);
-
-      await writeFile(path.join(worktreePath, "allow-setup"), "ok\n", "utf8");
+      expect(payload?.cwd).toBe(worktreePath);
+      expect(
+        recorder.recordedLaunches.filter((launch) => launch.cwd === worktreePath),
+      ).toHaveLength(1);
 
       await waitForPathExists({
         targetPath: path.join(worktreePath, "setup-done.txt"),
@@ -819,6 +847,74 @@ describe("agent MCP end-to-end (offline)", () => {
       if (agentId) {
         await client.callTool({ name: "kill_agent", args: { agentId } });
       }
+      await client.close();
+      await daemon.stop();
+      await rm(paseoHome, { recursive: true, force: true });
+      await rm(staticDir, { recursive: true, force: true });
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("create_agent removes its managed worktree when setup fails", async () => {
+    const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-home-"));
+    const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-static-"));
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-worktree-repo-"));
+    const port = await getAvailablePort();
+    const recorder: LaunchRecorder = { recordedLaunches: [] };
+    const daemon = await createPaseoDaemon(
+      {
+        listen: `127.0.0.1:${port}`,
+        paseoHome,
+        corsAllowedOrigins: [],
+        hostnames: true,
+        mcpEnabled: true,
+        staticDir,
+        mcpDebug: false,
+        agentClients: createMcpRecordingAgentClients(recorder),
+        agentStoragePath: path.join(paseoHome, "agents"),
+      },
+      pino({ level: "silent" }),
+    );
+    await daemon.start();
+    const client = await createMcpClient(`http://127.0.0.1:${port}/mcp/agents`);
+
+    try {
+      const { execSync } = await import("node:child_process");
+      execSync("git init -b main", { cwd: repoRoot, stdio: "pipe" });
+      execSync("git config user.email 'test@test.com'", { cwd: repoRoot, stdio: "pipe" });
+      execSync("git config user.name 'Test'", { cwd: repoRoot, stdio: "pipe" });
+      await writeFile(path.join(repoRoot, "paseo.json"), "{ invalid json\n");
+      execSync("git add .", { cwd: repoRoot, stdio: "pipe" });
+      execSync("git -c commit.gpgsign=false commit -m 'initial'", {
+        cwd: repoRoot,
+        stdio: "pipe",
+      });
+
+      const result = await client.callTool({
+        name: "create_agent",
+        args: {
+          cwd: repoRoot,
+          title: "MCP failed worktree setup",
+          provider: "claude/claude-test-model",
+          mode: "bypassPermissions",
+          initialPrompt: "never runs",
+          worktreeName: "mcp-worktree-setup-failure",
+          baseBranch: "main",
+          background: true,
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(recorder.recordedLaunches.filter((launch) => launch.cwd !== repoRoot)).toEqual([]);
+      const persisted = JSON.parse(
+        await readFile(path.join(paseoHome, "projects", "workspaces.json"), "utf8"),
+      ) as Array<{ worktreeRoot: string | null; archivedAt: string | null }>;
+      const failedWorkspace = persisted.find((workspace) =>
+        workspace.worktreeRoot?.endsWith("mcp-worktree-setup-failure"),
+      );
+      expect(failedWorkspace?.archivedAt).not.toBeNull();
+      expect(existsSync(failedWorkspace?.worktreeRoot ?? "")).toBe(false);
+    } finally {
       await client.close();
       await daemon.stop();
       await rm(paseoHome, { recursive: true, force: true });
