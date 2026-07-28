@@ -24,6 +24,11 @@ primed.
 Idle agents remain resident indefinitely. Runtime closure happens only through an explicit lifecycle
 action such as archive, replacement, reload, workspace teardown, or daemon shutdown.
 
+Do not treat provider session allocation as durable until the provider accepts a turn. Codex can
+return a thread ID before writing its rollout, so metadata reads must leave a new session unallocated.
+If workspace setup fails before the first prompt reaches the provider, restart recovery may discard
+that missing empty thread; it must never do this after Paseo records an accepted user message.
+
 A provider runtime can still die on its own — crash, OOM kill, host suspend. Work the agent parked
 inside that process dies with it: Claude Code's background Bash shells, `Monitor` watches, and
 workflows all live in the CLI process, and the completion notification that would have woken the
@@ -86,7 +91,12 @@ Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/
 2. Set `archivedAt` and normalize `lastStatus` away from `running`/`initializing`
 3. Notify subscribers
 4. Close the runtime (kills the process if still running)
-5. **Resolve children** — detach cross-workspace and open-tab children; cascade-archive the rest recursively
+5. Archive the provider-native session after its runtime releases the writer
+6. **Resolve children** — detach cross-workspace and open-tab children; cascade-archive the rest recursively
+
+Archived history hydration may open a read-only provider runtime. Unarchive closes that runtime
+before invoking the provider-native unarchive hook. Codex rejects archive, unarchive, and resume
+operations while another app-server process owns the thread writer.
 
 Cascade is what keeps subagent fleets from outliving their orchestrator.
 

@@ -1,5 +1,5 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronRight, CircleAlert, SquareTerminal } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { Pressable, type PressableStateCallbackType, ScrollView, Text, View } from "react-native";
@@ -14,7 +14,7 @@ import {
   useWorkspaceSetupStore,
   type WorkspaceSetupSnapshot,
 } from "@/stores/workspace-setup-store";
-import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 
 function useSetupPanelDescriptor(
   target: { kind: "setup"; workspaceId: string },
@@ -157,33 +157,18 @@ function SetupPanel() {
   invariant(target.kind === "setup", "SetupPanel requires setup target");
 
   const client = useHostRuntimeClient(serverId);
+  const isConnected = useHostRuntimeIsConnected(serverId);
   const key = buildWorkspaceTabPersistenceKey({
     serverId,
     workspaceId: target.workspaceId,
   });
   const snapshot = useWorkspaceSetupStore((state) => (key ? (state.snapshots[key] ?? null) : null));
-  const upsertProgress = useWorkspaceSetupStore((state) => state.upsertProgress);
+  const ensureSetupStatus = useWorkspaceSetupStore((state) => state.ensureSetupStatus);
 
-  // On mount, if no snapshot in the store, request cached status from server
-  const requestedRef = useRef(false);
   useEffect(() => {
-    if (snapshot || requestedRef.current || !client) return;
-    requestedRef.current = true;
-    client
-      .fetchWorkspaceSetupStatus(target.workspaceId)
-      .then((response) => {
-        if (response.snapshot) {
-          upsertProgress({
-            serverId,
-            payload: { workspaceId: response.workspaceId, ...response.snapshot },
-          });
-        }
-        return;
-      })
-      .catch(() => {
-        // Server may not support this yet — ignore
-      });
-  }, [client, snapshot, serverId, target.workspaceId, upsertProgress]);
+    if (!client || !isConnected) return;
+    ensureSetupStatus({ serverId, workspaceId: target.workspaceId, client });
+  }, [client, ensureSetupStatus, isConnected, serverId, target.workspaceId]);
 
   const commands = snapshot?.detail.commands ?? EMPTY_COMMANDS;
   const log = snapshot?.detail.log ?? "";

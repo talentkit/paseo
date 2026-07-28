@@ -790,6 +790,42 @@ describe("workspace-layout-store actions", () => {
     expect(findPaneContainingTab(layout.root, tabId!)?.id).toBe(explorerPaneId);
   });
 
+  it("moves setup into the main pane and focuses it", () => {
+    const workspaceKey = createWorkspaceKey();
+    const store = workspaceLayoutStore.getState();
+    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "agent-1" });
+    const existingTabId = store.openTabInExplorerPaneFocused(workspaceKey, {
+      target: { kind: "setup", workspaceId: WORKSPACE_ID },
+    });
+
+    const tabId = store.openTabInMainPane(workspaceKey, {
+      target: { kind: "setup", workspaceId: WORKSPACE_ID },
+      focused: true,
+    });
+
+    const layout = workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey];
+    expect(tabId).toBe(existingTabId);
+    expect(findPaneContainingTab(layout.root, tabId!)?.id).toBe("main");
+    expect(layout.focusedPaneId).toBe("main");
+    expect(findPaneById(layout.root, "main")?.focusedTabId).toBe(tabId);
+  });
+
+  it("opens setup in the main pane in the background without changing pane focus", () => {
+    const workspaceKey = createWorkspaceKey();
+    const store = workspaceLayoutStore.getState();
+    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "agent-1" });
+    const explorerPaneId = store.ensureExplorerPane(workspaceKey)?.paneId;
+
+    const tabId = store.openTabInMainPane(workspaceKey, {
+      target: { kind: "setup", workspaceId: WORKSPACE_ID },
+      focused: false,
+    });
+
+    const layout = workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey];
+    expect(findPaneContainingTab(layout.root, tabId!)?.id).toBe("main");
+    expect(layout.focusedPaneId).toBe(explorerPaneId);
+  });
+
   it("places an auto-added pull request in the registered explorer pane", () => {
     const workspaceKey = createWorkspaceKey();
     const store = workspaceLayoutStore.getState();

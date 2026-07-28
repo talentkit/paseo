@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  areWorkspaceSetupKeySetsEqual,
+  selectRunningWorkspaceSetupKeys,
   shouldShowWorkspaceSetup,
   useWorkspaceSetupStore,
   type WorkspaceSetupStatusClient,
@@ -156,6 +158,41 @@ describe("workspace-setup-store", () => {
     ).toBe(false);
   });
 
+  it("shows a running setup before its first command starts", () => {
+    expect(
+      shouldShowWorkspaceSetup({
+        workspaceId: "workspace-1",
+        ...DEFAULT_SNAPSHOT,
+        updatedAt: Date.now(),
+      }),
+    ).toBe(true);
+  });
+
+  it("selects setup activity without changing when only logs advance", () => {
+    const first = selectRunningWorkspaceSetupKeys({
+      snapshots: {
+        "server-1:42": {
+          workspaceId: "42",
+          ...DEFAULT_SNAPSHOT,
+          updatedAt: 1,
+        },
+      },
+    });
+    const second = selectRunningWorkspaceSetupKeys({
+      snapshots: {
+        "server-1:42": {
+          workspaceId: "42",
+          ...DEFAULT_SNAPSHOT,
+          detail: { ...DEFAULT_SNAPSHOT.detail, log: "more output" },
+          updatedAt: 2,
+        },
+      },
+    });
+
+    expect(first).toEqual(new Set(["server-1:42"]));
+    expect(areWorkspaceSetupKeySetsEqual(first, second)).toBe(true);
+  });
+
   it("shows setup snapshots with commands or errors", () => {
     expect(
       shouldShowWorkspaceSetup({
@@ -224,19 +261,129 @@ describe("workspace-setup-store", () => {
     await flush();
 
     ensureSetupStatus(client);
-    expect(calls).toEqual(["42"]);
+    expect(calls).toEqual(["42", "42"]);
+    await flush();
   });
 
-  it("ensureSetupStatus skips fetching when a snapshot already exists", () => {
+  it("ensureSetupStatus revalidates a cached running snapshot", async () => {
     useWorkspaceSetupStore.getState().upsertProgress({
       serverId: "server-1",
       payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT },
+    });
+    const { client, calls } = makeClient((workspaceId) =>
+      Promise.resolve(
+        setupResult(workspaceId, {
+          ...DEFAULT_SNAPSHOT,
+          status: "completed",
+        }),
+      ),
+    );
+
+    ensureSetupStatus(client);
+    await flush();
+
+    expect(calls).toEqual(["42"]);
+    expect(storedSnapshots()).toEqual([
+      expect.objectContaining({ workspaceId: "42", status: "completed" }),
+    ]);
+  });
+
+  it("ensureSetupStatus skips fetching when a terminal snapshot already exists", () => {
+    useWorkspaceSetupStore.getState().upsertProgress({
+      serverId: "server-1",
+      payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT, status: "completed" },
     });
     const { client, calls } = makeClient(resolveDefault);
 
     ensureSetupStatus(client);
 
     expect(calls).toEqual([]);
+  });
+
+  it("does not regress a terminal snapshot when stale running progress arrives", () => {
+    useWorkspaceSetupStore.getState().upsertProgress({
+      serverId: "server-1",
+      payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT, status: "completed" },
+    });
+
+    useWorkspaceSetupStore.getState().upsertProgress({
+      serverId: "server-1",
+      payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT, status: "running" },
+    });
+
+    expect(storedSnapshots()).toEqual([
+      expect.objectContaining({ workspaceId: "42", status: "completed" }),
+    ]);
+  });
+
+  it("ignores a delayed running response after newer live progress", async () => {
+    useWorkspaceSetupStore.getState().upsertProgress({
+      serverId: "server-1",
+      payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT },
+    });
+    const key = "server-1:42";
+    const requestedSnapshot = useWorkspaceSetupStore.getState().snapshots[key];
+    const deferred = createDeferred<WorkspaceSetupStatusResult>();
+    const { client } = makeClient(() => deferred.promise);
+
+    ensureSetupStatus(client);
+    useWorkspaceSetupStore.setState((state) => ({
+      snapshots: {
+        ...state.snapshots,
+        [key]: {
+          ...requestedSnapshot,
+          detail: { ...requestedSnapshot.detail, log: "new live output\n" },
+          updatedAt: requestedSnapshot.updatedAt + 1,
+        },
+      },
+    }));
+    deferred.resolve(
+      setupResult("42", {
+        ...DEFAULT_SNAPSHOT,
+        detail: { ...DEFAULT_SNAPSHOT.detail, log: "stale response\n" },
+      }),
+    );
+    await flush();
+
+    expect(useWorkspaceSetupStore.getState().snapshots[key]?.detail.log).toBe("new live output\n");
+  });
+
+  it("accepts a terminal response after newer live progress", async () => {
+    useWorkspaceSetupStore.getState().upsertProgress({
+      serverId: "server-1",
+      payload: { workspaceId: "42", ...DEFAULT_SNAPSHOT },
+    });
+    const key = "server-1:42";
+    const requestedSnapshot = useWorkspaceSetupStore.getState().snapshots[key];
+    const deferred = createDeferred<WorkspaceSetupStatusResult>();
+    const { client } = makeClient(() => deferred.promise);
+
+    ensureSetupStatus(client);
+    useWorkspaceSetupStore.setState((state) => ({
+      snapshots: {
+        ...state.snapshots,
+        [key]: {
+          ...requestedSnapshot,
+          detail: { ...requestedSnapshot.detail, log: "new live output\n" },
+          updatedAt: requestedSnapshot.updatedAt + 1,
+        },
+      },
+    }));
+    deferred.resolve(
+      setupResult("42", {
+        ...DEFAULT_SNAPSHOT,
+        status: "completed",
+        detail: { ...DEFAULT_SNAPSHOT.detail, log: "done\n" },
+      }),
+    );
+    await flush();
+
+    expect(useWorkspaceSetupStore.getState().snapshots[key]).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        detail: expect.objectContaining({ log: "done\n" }),
+      }),
+    );
   });
 
   it("ensureSetupStatus ignores a response for a different workspace", async () => {

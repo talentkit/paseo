@@ -618,6 +618,11 @@ export interface AgentCreateSessionOptions {
 export interface AgentResumeSessionOptions {
   /** Defaults to interactive. History loading may be read-only for archived native sessions. */
   purpose?: "interactive" | "history";
+  /**
+   * Recover a session that was allocated but never received a provider turn.
+   * This is only safe when Paseo has no accepted user message for the session.
+   */
+  recoverMissingEmptySession?: boolean;
 }
 
 /**

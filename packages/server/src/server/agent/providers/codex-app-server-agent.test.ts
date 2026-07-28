@@ -1254,6 +1254,33 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
+  test("does not allocate a Codex thread while reading runtime metadata", async () => {
+    const threadStarts = vi.fn(() => ({ thread: { id: "unused-thread" } }));
+    const appServer = createFakeCodexAppServer({ "thread/start": threadStarts });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({
+      provider: "codex",
+      sessionId: null,
+      model: "gpt-5.4",
+      thinkingOptionId: "medium",
+    });
+    expect(session.describePersistence()).toBeNull();
+    expect(threadStarts).not.toHaveBeenCalled();
+
+    await session.startTurn("allocate on demand");
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({ sessionId: "unused-thread" });
+    expect(threadStarts).toHaveBeenCalledTimes(1);
+
+    appServer.assertNoErrors();
+    await session.close();
+  });
+
   test("loads archived Codex history without resuming the native thread", async () => {
     const threadRequests: string[] = [];
     const appServer = createFakeCodexAppServer({
@@ -1294,6 +1321,38 @@ describe("Codex app-server provider", () => {
     );
 
     expect(killSpy).toHaveBeenCalledWith("SIGTERM");
+    appServer.assertNoErrors();
+  });
+
+  test("recovers a missing empty Codex thread only when explicitly allowed", async () => {
+    const threadStarts = vi.fn(() => ({ thread: { id: "replacement-thread-id" } }));
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () =>
+        Promise.reject(new Error("no rollout found for thread id missing-empty-thread-id")),
+      "thread/start": threadStarts,
+    });
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    const session = await provider.resumeSession(
+      {
+        provider: "codex",
+        sessionId: "missing-empty-thread-id",
+        metadata: { cwd: "/workspace/project" },
+      },
+      undefined,
+      undefined,
+      { recoverMissingEmptySession: true },
+    );
+
+    expect(session.describePersistence()).toBeNull();
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({ sessionId: null });
+    expect(threadStarts).not.toHaveBeenCalled();
+
+    await session.startTurn("start after setup failure");
+    expect(session.describePersistence()).toMatchObject({ sessionId: "replacement-thread-id" });
+    expect(threadStarts).toHaveBeenCalledTimes(1);
+
+    await session.close();
     appServer.assertNoErrors();
   });
 

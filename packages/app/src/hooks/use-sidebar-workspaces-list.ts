@@ -12,6 +12,11 @@ import { getHostRuntimeStore, useHostRegistryLoaded, useHosts } from "@/runtime/
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import {
+  areWorkspaceSetupKeySetsEqual,
+  selectRunningWorkspaceSetupKeys,
+  useWorkspaceSetupStore,
+} from "@/stores/workspace-setup-store";
+import {
   buildSidebarWorkspacePlacementModel,
   computeSidebarOrderUpdates,
   createSidebarWorkspaceEntry,
@@ -66,6 +71,19 @@ export function useSidebarProjectStatusBucket(input: {
     (state) => state.pendingByDraftId,
     workspaceEqualityFns.deep,
   );
+  const workspaceKeys = useMemo(
+    () => new Set(workspaces.map((workspace) => workspace.workspaceKey)),
+    [workspaces],
+  );
+  const runningWorkspaceSetupKeys = useStoreWithEqualityFn(
+    useWorkspaceSetupStore,
+    (state) => {
+      if (!enabled) return new Set<string>();
+      const runningKeys = selectRunningWorkspaceSetupKeys(state);
+      return new Set(Array.from(runningKeys).filter((key) => workspaceKeys.has(key)));
+    },
+    areWorkspaceSetupKeySetsEqual,
+  );
 
   const selector = useCallback(
     (state: { sessions: Record<string, ProjectStatusSession | undefined> }) => {
@@ -74,9 +92,10 @@ export function useSidebarProjectStatusBucket(input: {
         workspaces,
         sessions: state.sessions,
         pendingCreateAttempts,
+        runningWorkspaceSetupKeys,
       });
     },
-    [enabled, pendingCreateAttempts, workspaces],
+    [enabled, pendingCreateAttempts, runningWorkspaceSetupKeys, workspaces],
   );
 
   return useStoreWithEqualityFn(useSessionStore, selector, Object.is);

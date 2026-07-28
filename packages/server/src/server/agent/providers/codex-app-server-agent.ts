@@ -135,6 +135,11 @@ function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolea
   return message.includes(`no archived rollout found for thread id ${threadId}`);
 }
 
+function isMissingCodexThreadResumeError(error: unknown, threadId: string): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(`no rollout found for thread id ${threadId}`);
+}
+
 const TURN_START_TIMEOUT_MS = 90 * 1000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
@@ -3306,6 +3311,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     private readonly autoReviewEnabled: boolean = false,
     private readonly agentId?: string,
     private readonly initialResumePurpose: "interactive" | "history" = "interactive",
+    private readonly recoverMissingEmptySession: boolean = false,
   ) {
     this.logger = logger.child({
       module: "agent",
@@ -3811,6 +3817,15 @@ export class CodexAppServerAgentSession implements AgentSession {
         );
         return;
       }
+      if (this.recoverMissingEmptySession && isMissingCodexThreadResumeError(error, threadId)) {
+        this.logger.info(
+          { threadId },
+          "Discarding missing Codex thread that never received a provider turn",
+        );
+        this.currentThreadId = null;
+        this.historyPending = false;
+        return;
+      }
       this.logger.warn({ error, threadId }, "Failed to resume persisted Codex thread");
       throw new Error(`Failed to resume Codex thread ${threadId}: ${message}`, { cause: error });
     }
@@ -4257,7 +4272,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.connect();
     }
     if (!this.currentThreadId) {
-      await this.ensureThread();
+      const { model, thinkingOptionId } = await this.resolveModelAndThinking();
+      this.config.model = model;
+      this.config.thinkingOptionId = thinkingOptionId;
     }
     const info: AgentRuntimeInfo = {
       provider: CODEX_PROVIDER,
@@ -4869,6 +4886,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.cachedRuntimeInfo = null;
     }
     this.currentThreadId = threadId;
+    this.cachedRuntimeInfo = null;
   }
 
   private buildThreadStartRequest(model: string): {
@@ -5652,6 +5670,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     parsed: Extract<ParsedCodexNotification, { kind: "thread_started" }>,
   ): void {
     this.currentThreadId = parsed.threadId;
+    this.cachedRuntimeInfo = null;
     this.emitEvent({
       type: "thread_started",
       provider: CODEX_PROVIDER,
@@ -6816,6 +6835,7 @@ export class CodexAppServerAgentClient implements AgentClient {
       autoReviewEnabled,
       launchContext?.agentId,
       options?.purpose ?? "interactive",
+      options?.recoverMissingEmptySession ?? false,
     );
     await session.connect();
     return session;

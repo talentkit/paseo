@@ -89,6 +89,7 @@ import {
   useSessionStore,
 } from "@/stores/session-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
+import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { openExplorerSurface } from "@/workspace-tabs/explorer-surface";
 import type { Theme } from "@/styles/theme";
@@ -620,6 +621,9 @@ function AgentPanelBody({
   const lookupAttemptTokenRef = useRef(0);
   const retryAgentLookup = useCallback(() => setLookupState({ tag: "idle" }), []);
   const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
+  const isWorkspaceSetupRunning = useWorkspaceSetupStore((state) =>
+    workspaceKey ? state.snapshots[workspaceKey]?.status === "running" : false,
+  );
   const resolvePendingAgent = useWorkspaceLayoutStore((state) => state.resolvePendingAgent);
 
   useEffect(() => {
@@ -752,6 +756,7 @@ function AgentPanelBody({
       client={client}
       isConnected={isConnected}
       connectionStatus={connectionStatus}
+      isWorkspaceSetupRunning={isWorkspaceSetupRunning}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );
@@ -764,6 +769,7 @@ function ChatAgentContent({
   client,
   isConnected,
   connectionStatus,
+  isWorkspaceSetupRunning,
   onOpenWorkspaceFile,
 }: {
   serverId: string;
@@ -772,6 +778,7 @@ function ChatAgentContent({
   client: ReturnType<typeof useHostRuntimeClient>;
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
+  isWorkspaceSetupRunning: boolean;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
@@ -1182,6 +1189,9 @@ function ChatAgentContent({
       isRetryingHistorySync={isRetryingHistorySync}
       cwd={agentCwd}
       retryTimelineSync={retryTimelineSync}
+      runningStatusLabel={
+        isWorkspaceSetupRunning ? t("workspace.setup.waitingForWorkspace") : undefined
+      }
       onAttentionInputFocus={attentionController.clearOnInputFocus}
       onAttentionPromptSend={attentionController.clearOnPromptSend}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
@@ -1209,6 +1219,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   showHistorySyncError,
   isRetryingHistorySync,
   retryTimelineSync,
+  runningStatusLabel,
   cwd,
   onAttentionInputFocus,
   onAttentionPromptSend,
@@ -1233,6 +1244,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   showHistorySyncError: boolean;
   isRetryingHistorySync: boolean;
   retryTimelineSync: () => void;
+  runningStatusLabel?: string;
   cwd: string;
   onAttentionInputFocus: () => void;
   onAttentionPromptSend: () => void;
@@ -1334,6 +1346,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           hasAppliedAuthoritativeHistory={hasAppliedAuthoritativeHistory}
           bottomOverlayTailClearance={showAgentTracks ? composerTrackTailClearance : 0}
           toast={toastApi}
+          runningStatusLabel={runningStatusLabel}
           onOpenWorkspaceFile={onOpenWorkspaceFile}
         />
       </RenderProfile>
@@ -1414,6 +1427,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory,
   bottomOverlayTailClearance,
   toast,
+  runningStatusLabel,
   onOpenWorkspaceFile,
 }: {
   streamViewRef: React.RefObject<AgentStreamViewHandle | null>;
@@ -1424,6 +1438,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
   hasAppliedAuthoritativeHistory: boolean;
   bottomOverlayTailClearance: number;
   toast: ReturnType<typeof useToastHost>["api"];
+  runningStatusLabel?: string;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const streamItemsRaw = useSessionStore((state) =>
@@ -1485,6 +1500,7 @@ const AgentStreamSection = memo(function AgentStreamSection({
       toast={toast}
       pendingMessageSubmissions={pendingMessageSubmissions}
       turnPresentation={turnPresentation}
+      runningStatusLabel={runningStatusLabel}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );

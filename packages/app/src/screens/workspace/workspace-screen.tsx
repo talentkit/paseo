@@ -49,7 +49,6 @@ import { toggleDesktopSidebarsWithCheckoutIntent } from "@/utils/desktop-sidebar
 import {
   isExplorerSurfaceOpen,
   openWorkspaceTabBeside,
-  openWorkspaceTabBesideInBackground,
   toggleExplorerSurface,
   useIsExplorerSurfaceOpen,
 } from "@/workspace-tabs/explorer-surface";
@@ -178,8 +177,8 @@ import {
 import { RenderProfile } from "@/utils/render-profiler";
 import { useWorkspaceCheckoutStatus } from "@/screens/workspace/use-workspace-checkout-status";
 import { usePullRequestAutoAdd } from "@/panels/pull-request";
+import { resolveWorkspaceSetupAutoOpenMode } from "@/screens/workspace/workspace-setup-presentation";
 
-const WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS = 30_000;
 const WORKSPACE_FLOATING_PANEL_PORTAL_HOST_PREFIX = "workspace-floating-panels";
 const EMPTY_UI_TABS: WorkspaceTab[] = [];
 const EMPTY_WORKSPACE_SCRIPTS: WorkspaceDescriptor["scripts"] = [];
@@ -1685,9 +1684,7 @@ function WorkspaceScreenContent({
   const openWorkspaceTabInBackground = useWorkspaceLayoutStore(
     (state) => state.openTabInBackground,
   );
-  const openWorkspaceTabInExplorerPaneBackground = useWorkspaceLayoutStore(
-    (state) => state.openTabInExplorerPaneBackground,
-  );
+  const openWorkspaceTabInMainPane = useWorkspaceLayoutStore((state) => state.openTabInMainPane);
   const focusWorkspaceTab = useWorkspaceLayoutStore((state) => state.focusTab);
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
@@ -1957,14 +1954,11 @@ function WorkspaceScreenContent({
       return;
     }
 
-    const snapshotAge = Date.now() - workspaceSetupSnapshot.updatedAt;
-    const shouldAutoOpen =
-      workspaceSetupSnapshot.status === "running" ||
-      snapshotAge <= WORKSPACE_SETUP_AUTO_OPEN_WINDOW_MS;
-    if (!shouldAutoOpen) {
+    const autoOpenMode = resolveWorkspaceSetupAutoOpenMode(workspaceSetupSnapshot, Date.now());
+    if (!autoOpenMode) {
       return;
     }
-    if (hasSetupTab) {
+    if (hasSetupTab && autoOpenMode === "background") {
       autoOpenedSetupTabWorkspaceRef.current = persistenceKey;
       return;
     }
@@ -1980,10 +1974,9 @@ function WorkspaceScreenContent({
       return;
     }
 
-    const tabId = openWorkspaceTabBesideInBackground({
-      isCompact: isMobile,
-      workspaceKey: persistenceKey,
+    const tabId = openWorkspaceTabInMainPane(persistenceKey, {
       target,
+      focused: autoOpenMode === "focused",
     });
     if (!tabId) {
       return;
@@ -1992,18 +1985,22 @@ function WorkspaceScreenContent({
     autoOpenedSetupTabWorkspaceRef.current = persistenceKey;
   }, [
     hasSetupTab,
-    isMobile,
     isRouteFocused,
     normalizedWorkspaceId,
-    openWorkspaceTabInBackground,
-    openWorkspaceTabInExplorerPaneBackground,
+    openWorkspaceTabInMainPane,
     persistenceKey,
     showWorkspaceSetup,
     workspaceSetupSnapshot,
   ]);
 
   useEffect(() => {
-    if (!isRouteFocused || !client || !normalizedServerId || !normalizedWorkspaceId) {
+    if (
+      !isRouteFocused ||
+      !isConnected ||
+      !client ||
+      !normalizedServerId ||
+      !normalizedWorkspaceId
+    ) {
       return;
     }
     ensureWorkspaceSetupStatus({
@@ -2014,6 +2011,7 @@ function WorkspaceScreenContent({
   }, [
     client,
     ensureWorkspaceSetupStatus,
+    isConnected,
     isRouteFocused,
     normalizedServerId,
     normalizedWorkspaceId,
@@ -2621,8 +2619,8 @@ function WorkspaceScreenContent({
     if (!target) {
       return;
     }
-    openWorkspaceTabBeside({ isCompact: isMobile, workspaceKey: persistenceKey, target });
-  }, [isMobile, normalizedWorkspaceId, persistenceKey]);
+    openWorkspaceTabInMainPane(persistenceKey, { target, focused: true });
+  }, [normalizedWorkspaceId, openWorkspaceTabInMainPane, persistenceKey]);
 
   const handleBulkCloseTabs = useCallback(
     async (input: { tabsToClose: WorkspaceTabDescriptor[]; title: string; logLabel: string }) => {

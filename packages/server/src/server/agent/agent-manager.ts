@@ -16,6 +16,7 @@ import type { Logger } from "pino";
 import type { ProviderOptions, ToolPolicy } from "@getpaseo/protocol/agent-types";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
+import type { WorkspaceSetupReadiness } from "../workspace-setup-readiness.js";
 
 import {
   getAgentStreamEventTurnId,
@@ -287,6 +288,7 @@ export interface AgentManagerOptions {
     agentId: string;
     expectedTurnId: string;
   }) => Promise<void>;
+  workspaceSetupReadiness?: Pick<WorkspaceSetupReadiness, "isPending" | "waitUntilReady">;
   logger: Logger;
 }
 
@@ -693,6 +695,10 @@ export class AgentManager {
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
+  private readonly workspaceSetupReadiness: Pick<
+    WorkspaceSetupReadiness,
+    "isPending" | "waitUntilReady"
+  >;
   private acceptingAgentRegistrations = true;
 
   constructor(options: AgentManagerOptions) {
@@ -714,6 +720,10 @@ export class AgentManager {
         options.rescueTimeouts?.interruptSessionMs ?? INTERRUPT_SESSION_TIMEOUT_MS,
     };
     this.beforeSteerUnavailableFallback = options.beforeSteerUnavailableFallback;
+    this.workspaceSetupReadiness = options.workspaceSetupReadiness ?? {
+      isPending: () => false,
+      waitUntilReady: async () => {},
+    };
     this.agentStreamCoalescer = new AgentStreamCoalescer({
       windowMs: options.agentStreamCoalesceWindowMs ?? AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS,
       timers: { setTimeout, clearTimeout },
@@ -1258,7 +1268,7 @@ export class AgentManager {
     await this.requireExternalMcpSupport(session, storedConfig);
     return this.registerSession(session, storedConfig, resolvedAgentId, {
       ...options,
-      persistence: handle,
+      ...(resumeOptions?.recoverMissingEmptySession ? {} : { persistence: handle }),
     });
   }
 
@@ -1579,9 +1589,15 @@ export class AgentManager {
       throw new Error(`Agent ${agentId} not found in storage after snapshot`);
     }
 
-    const { archivedAt } = await this.markRecordArchived(stored);
+    const { archivedAt } = await this.markRecordArchived(stored, {
+      deferNativeArchive: true,
+    });
     agent.updatedAt = new Date(archivedAt);
-    await this.closeAgent(agentId);
+    try {
+      await this.closeAgent(agentId);
+    } finally {
+      await this.archiveNativeSessionBestEffort(stored.provider, stored.persistence);
+    }
     this.discardRetainedAgentState(agentId);
 
     await this.cascadeArchiveChildren(agentId);
@@ -1634,14 +1650,19 @@ export class AgentManager {
     }
   }
 
-  private async markRecordArchived(record: StoredAgentRecord): Promise<ArchivedStoredAgentRecord> {
+  private async markRecordArchived(
+    record: StoredAgentRecord,
+    options?: { deferNativeArchive?: boolean },
+  ): Promise<ArchivedStoredAgentRecord> {
     const registry = this.requireRegistry();
     const archivedAt = new Date().toISOString();
     const archivedRecord = buildArchivedAgentRecord(record, { archivedAt, updatedAt: archivedAt });
 
     await registry.upsert(archivedRecord);
 
-    await this.archiveNativeSessionBestEffort(record.provider, record.persistence);
+    if (!options?.deferNativeArchive) {
+      await this.archiveNativeSessionBestEffort(record.provider, record.persistence);
+    }
 
     if (this.agents.has(record.id)) {
       this.notifyAgentState(record.id);
@@ -1949,12 +1970,26 @@ export class AgentManager {
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
   ): Promise<boolean> {
+    return this.runLifecycleMutation(agentId, () =>
+      this.unarchiveSnapshotUnlocked(agentId, updates),
+    );
+  }
+
+  private async unarchiveSnapshotUnlocked(
+    agentId: string,
+    updates?: { workspaceId?: string; labels?: AgentLabelPatch },
+  ): Promise<boolean> {
     const registry = this.requireRegistry();
     const record = await registry.get(agentId);
     if (!record || !record.archivedAt) {
       return false;
     }
 
+    // Archived timeline hydration may have opened a history-only provider runtime. It must
+    // release the native session before the provider can unarchive or interactively resume it.
+    if (this.getAgent(agentId)) {
+      await this.closeAgent(agentId);
+    }
     await this.unarchiveNativeSession(record.provider, record.persistence);
 
     await registry.upsert({
@@ -2085,6 +2120,9 @@ export class AgentManager {
    */
   tryRunOutOfBand(agentId: string, prompt: AgentPromptInput, options?: AgentRunOptions): boolean {
     const agent = this.requireSessionAgent(agentId);
+    if (agent.workspaceId && this.workspaceSetupReadiness.isPending(agent.workspaceId)) {
+      return false;
+    }
     const handler = agent.session.tryHandleOutOfBand?.(prompt);
     if (!handler) {
       return false;
@@ -2199,6 +2237,9 @@ export class AgentManager {
       let turnId: string;
       let turnStream: ReturnType<AgentRunState["createTurnStream"]> | null = null;
       try {
+        if (agent.workspaceId) {
+          await this.workspaceSetupReadiness.waitUntilReady(agent.workspaceId);
+        }
         const result = await agent.session.startTurn(prompt, options);
         turnId = result.turnId;
       } catch (error) {
@@ -2662,6 +2703,11 @@ export class AgentManager {
 
       checkCurrentState();
     });
+  }
+
+  isAgentWaitingForWorkspaceSetup(agentId: string): boolean {
+    const agent = this.requireAgent(agentId);
+    return Boolean(agent.workspaceId && this.workspaceSetupReadiness.isPending(agent.workspaceId));
   }
 
   async respondToPermission(

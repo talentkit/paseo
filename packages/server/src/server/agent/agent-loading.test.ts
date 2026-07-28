@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
@@ -75,6 +75,70 @@ test("loads archived records for history and active records with the interactive
       manager.closeAgent(archivedId).catch(() => undefined),
       manager.closeAgent(activeId).catch(() => undefined),
     ]);
+    await manager.flush().catch(() => undefined);
+    await storage.flush().catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("allows recovery only for a setup-failed agent with no accepted user message", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agent-loading-setup-recovery-"));
+  const logger = createTestLogger();
+  const storage = new AgentStorage(path.join(root, "agents"), logger);
+  const baseClient = createTestAgentClients().codex;
+  if (!baseClient) {
+    throw new Error("expected Codex test client");
+  }
+
+  const resumeSession = vi.fn(
+    async (
+      handle: AgentPersistenceHandle,
+      overrides?: Partial<AgentSessionConfig>,
+      launchContext?: AgentLaunchContext,
+    ) => await baseClient.resumeSession(handle, overrides, launchContext),
+  );
+  const manager = new AgentManager({
+    clients: {
+      codex: {
+        provider: baseClient.provider,
+        capabilities: baseClient.capabilities,
+        createSession: async (
+          config: AgentSessionConfig,
+          launchContext?: AgentLaunchContext,
+        ): Promise<AgentSession> => await baseClient.createSession(config, launchContext),
+        resumeSession,
+        fetchCatalog: async (options) => await baseClient.fetchCatalog(options),
+        isAvailable: async () => await baseClient.isAvailable(),
+      },
+    },
+    registry: storage,
+    logger,
+  });
+  const agentId = "00000000-0000-4000-8000-000000000303";
+
+  try {
+    const created = await manager.createAgent({ provider: "codex", cwd: root }, agentId, {
+      workspaceId: "workspace-setup-failed",
+    });
+    await manager.closeAgent(created.id);
+    const record = await storage.get(agentId);
+    if (!record) throw new Error("expected stored agent");
+    await storage.upsert({
+      ...record,
+      lastError: "Workspace setup failed: daemon stopped",
+      lastUserMessageAt: null,
+    });
+
+    await ensureAgentLoaded(agentId, { agentManager: manager, agentStorage: storage, logger });
+
+    expect(resumeSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: expect.any(String) }),
+      expect.objectContaining({ cwd: root }),
+      expect.objectContaining({ agentId }),
+      { recoverMissingEmptySession: true },
+    );
+  } finally {
+    await manager.closeAgent(agentId).catch(() => undefined);
     await manager.flush().catch(() => undefined);
     await storage.flush().catch(() => undefined);
     await rm(root, { recursive: true, force: true });

@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { AgentProvider } from "./agent-sdk-types.js";
+import type { AgentProvider, AgentResumeSessionOptions } from "./agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import {
@@ -105,12 +105,22 @@ export async function ensureAgentLoaded(
 
     let snapshot: ManagedAgent;
     if (handle) {
+      const recoverMissingEmptySession =
+        !record.archivedAt &&
+        record.lastUserMessageAt == null &&
+        record.lastError?.startsWith("Workspace setup failed:") === true;
+      let resumeOptions: AgentResumeSessionOptions | undefined;
+      if (record.archivedAt) {
+        resumeOptions = { purpose: "history" };
+      } else if (recoverMissingEmptySession) {
+        resumeOptions = { recoverMissingEmptySession: true };
+      }
       snapshot = await deps.agentManager.resumeAgentFromPersistence(
         handle,
         buildConfigOverrides(record),
         agentId,
         extractTimestamps(record),
-        record.archivedAt ? { purpose: "history" } : undefined,
+        resumeOptions,
       );
       deps.logger.info({ agentId, provider: record.provider }, "Agent resumed from persistence");
     } else {

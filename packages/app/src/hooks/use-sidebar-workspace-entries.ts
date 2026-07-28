@@ -3,6 +3,11 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { useSessionStore } from "@/stores/session-store";
 import {
+  areWorkspaceSetupKeySetsEqual,
+  selectRunningWorkspaceSetupKeys,
+  useWorkspaceSetupStore,
+} from "@/stores/workspace-setup-store";
+import {
   areSidebarWorkspaceSessionsEqual,
   buildSidebarWorkspaceEntries,
   selectSidebarWorkspaceSessions,
@@ -14,6 +19,7 @@ import {
 const EMPTY_ENTRIES = new Map<string, SidebarWorkspaceEntry>();
 const EMPTY_SESSIONS: SidebarWorkspaceSession[] = [];
 const EMPTY_PENDING_CREATE_ATTEMPTS: Record<string, never> = {};
+const EMPTY_RUNNING_WORKSPACE_SETUP_KEYS = new Set<string>();
 
 export function useSidebarWorkspaceEntries(
   placements: readonly SidebarWorkspacePlacement[],
@@ -32,6 +38,12 @@ export function useSidebarWorkspaceEntries(
   const pendingCreateAttempts = useCreateFlowStore((state) =>
     enabled ? state.pendingByDraftId : EMPTY_PENDING_CREATE_ATTEMPTS,
   );
+  const runningWorkspaceSetupKeys = useStoreWithEqualityFn(
+    useWorkspaceSetupStore,
+    (state) =>
+      enabled ? selectRunningWorkspaceSetupKeys(state) : EMPTY_RUNNING_WORKSPACE_SETUP_KEYS,
+    areWorkspaceSetupKeySetsEqual,
+  );
   const previousEntriesRef = useRef<ReadonlyMap<string, SidebarWorkspaceEntry>>(EMPTY_ENTRIES);
 
   // Collection ownership is intentional: retained sidebars have one cheap
@@ -49,9 +61,10 @@ export function useSidebarWorkspaceEntries(
       placements,
       sessions,
       pendingCreateAttempts,
+      runningWorkspaceSetupKeys,
       previousEntries: previousEntriesRef.current,
     });
     previousEntriesRef.current = entries;
     return entries;
-  }, [enabled, pendingCreateAttempts, placements, sessions]);
+  }, [enabled, pendingCreateAttempts, placements, runningWorkspaceSetupKeys, sessions]);
 }

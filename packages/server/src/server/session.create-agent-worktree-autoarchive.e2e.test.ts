@@ -335,6 +335,33 @@ test("create_agent_request with worktree but no autoArchive leaves agent and wor
   await ctx.client.archivePaseoWorktree({ worktreePath: created.worktreePath });
 });
 
+test("legacy git worktree creation does not leave a local source workspace", async () => {
+  const repoDir = createGitRepo();
+  const created = await ctx.client.createAgent({
+    config: {
+      ...getFullAccessConfig("codex"),
+      cwd: repoDir,
+    },
+    git: {
+      createWorktree: true,
+      createNewBranch: true,
+      newBranchName: "legacy-worktree-without-source-leak",
+      worktreeSlug: "legacy-worktree-without-source-leak",
+      baseBranch: "main",
+    },
+    initialPrompt: "Say done.",
+  });
+
+  const workspaces = await ctx.client.fetchWorkspaces();
+  expect(workspaces.entries).toHaveLength(1);
+  expect(workspaces.entries[0]).toMatchObject({
+    id: created.workspaceId,
+    workspaceDirectory: created.cwd,
+  });
+
+  await ctx.client.archivePaseoWorktree({ worktreePath: created.cwd });
+});
+
 test("archiving a created worktree removes the directory on last reference", async () => {
   const created = await createAgentInBranchOffWorktree();
 

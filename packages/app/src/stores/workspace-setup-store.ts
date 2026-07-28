@@ -30,14 +30,20 @@ export interface WorkspaceSetupSnapshot extends WorkspaceSetupProgressPayload {
   updatedAt: number;
 }
 
+function isTerminalWorkspaceSetupStatus(status: WorkspaceSetupSnapshot["status"]): boolean {
+  return status === "completed" || status === "failed";
+}
+
 export function shouldShowWorkspaceSetup(snapshot: WorkspaceSetupSnapshot | null): boolean {
   if (!snapshot) {
     return false;
   }
-  return snapshot.error !== null || snapshot.detail.commands.length > 0;
+  return (
+    snapshot.status === "running" || snapshot.error !== null || snapshot.detail.commands.length > 0
+  );
 }
 
-interface WorkspaceSetupStoreState {
+export interface WorkspaceSetupStoreState {
   pendingWorkspaceSetup: PendingWorkspaceSetup | null;
   snapshots: Record<string, WorkspaceSetupSnapshot>;
   requestedKeys: Set<string>;
@@ -51,6 +57,27 @@ interface WorkspaceSetupStoreState {
   }) => void;
   removeWorkspace: (input: { serverId: string; workspaceId: string }) => void;
   clearServer: (serverId: string) => void;
+}
+
+export function selectRunningWorkspaceSetupKeys(
+  state: Pick<WorkspaceSetupStoreState, "snapshots">,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const [key, snapshot] of Object.entries(state.snapshots)) {
+    if (snapshot.status === "running") keys.add(key);
+  }
+  return keys;
+}
+
+export function areWorkspaceSetupKeySetsEqual(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
 }
 
 function buildWorkspaceSetupKey(input: { serverId: string; workspaceId: string }): string | null {
@@ -73,15 +100,25 @@ export const useWorkspaceSetupStore = create<WorkspaceSetupStoreState>()((set, g
       return;
     }
 
-    set((state) => ({
-      snapshots: {
-        ...state.snapshots,
-        [key]: {
-          ...payload,
-          updatedAt: Date.now(),
+    set((state) => {
+      const current = state.snapshots[key];
+      if (
+        current &&
+        isTerminalWorkspaceSetupStatus(current.status) &&
+        payload.status !== current.status
+      ) {
+        return state;
+      }
+      return {
+        snapshots: {
+          ...state.snapshots,
+          [key]: {
+            ...payload,
+            updatedAt: Date.now(),
+          },
         },
-      },
-    }));
+      };
+    });
   },
   ensureSetupStatus: async ({ serverId, workspaceId, client }) => {
     const key = buildWorkspaceSetupKey({ serverId, workspaceId });
@@ -89,19 +126,34 @@ export const useWorkspaceSetupStore = create<WorkspaceSetupStoreState>()((set, g
       return;
     }
     const state = get();
-    if (state.snapshots[key] || state.requestedKeys.has(key)) {
+    const snapshot = state.snapshots[key];
+    const requestedSnapshotUpdatedAt = snapshot?.updatedAt ?? null;
+    if (
+      (snapshot && isTerminalWorkspaceSetupStatus(snapshot.status)) ||
+      state.requestedKeys.has(key)
+    ) {
       return;
     }
 
     // requestedKeys is a pure in-flight marker: it dedupes concurrent fetches and is
     // released once the request settles. A settle that stored no snapshot (null snapshot,
     // mismatched workspace, or error) leaves no marker, so a later call can retry; once a
-    // snapshot lands, the snapshots[key] guard above prevents redundant refetches.
+    // terminal snapshot lands, the snapshots[key] guard above prevents redundant refetches.
+    // Running snapshots are deliberately revalidated when a workspace or Setup panel mounts and
+    // when its host reconnects, because progress events may have been missed while disconnected.
     set((current) => ({ requestedKeys: new Set(current.requestedKeys).add(key) }));
 
     try {
       const response = await client.fetchWorkspaceSetupStatus(workspaceId);
       if (response.workspaceId === workspaceId && response.snapshot) {
+        const current = get().snapshots[key];
+        if (
+          response.snapshot.status === "running" &&
+          current &&
+          current.updatedAt > (requestedSnapshotUpdatedAt ?? Number.NEGATIVE_INFINITY)
+        ) {
+          return;
+        }
         get().upsertProgress({
           serverId,
           payload: { workspaceId: response.workspaceId, ...response.snapshot },

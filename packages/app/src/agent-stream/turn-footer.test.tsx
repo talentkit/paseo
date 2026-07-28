@@ -13,6 +13,9 @@ vi.mock("react-native", () => ({
   View: ({ children, testID }: { children?: React.ReactNode; testID?: string }) => (
     <div data-testid={testID}>{children}</div>
   ),
+  Text: ({ children, testID }: { children?: React.ReactNode; testID?: string }) => (
+    <span data-testid={testID}>{children}</span>
+  ),
 }));
 
 vi.mock("react-native-unistyles", () => ({
@@ -104,5 +107,29 @@ describe("TurnFooter", () => {
       "running-turn-fork",
       "running-turn-timestamp",
     ]);
+  });
+
+  it("shows an explicit waiting status without an active or completed turn", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        <TurnFooter
+          isRunning={false}
+          runningStatusLabel="Waiting for workspace setup"
+          inFlightTurnStartedAt={null}
+          host={null}
+          strategy={unusedRunningTurnStrategy}
+          supportsTimelineCursor
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-testid="turn-working-status"]')?.textContent).toBe(
+      "Waiting for workspace setup",
+    );
+    expect(container.querySelector('[data-testid="running-turn-loader"]')).not.toBeNull();
   });
 });

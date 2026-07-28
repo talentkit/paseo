@@ -808,17 +808,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       applyWorkspaceSetupProgress(message.payload);
     });
 
-    const unsubWorkspaceSetupStatusResponse = client.on(
-      "workspace_setup_status_response",
-      (message) => {
-        if (message.type !== "workspace_setup_status_response") return;
-        const { workspaceId, snapshot } = message.payload;
-        if (snapshot) {
-          applyWorkspaceSetupProgress({ workspaceId, ...snapshot });
-        }
-      },
-    );
-
     const unsubStatus = client.on("status", (message) => {
       if (message.type !== "status") return;
       const serverInfo = parseServerInfoStatusPayload(message.payload);
@@ -990,7 +979,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubScriptStatusUpdate();
       unsubCheckoutStatusUpdate();
       unsubWorkspaceSetupProgress();
-      unsubWorkspaceSetupStatusResponse();
       unsubStatus();
       unsubPermissionRequest();
       unsubPermissionResolved();

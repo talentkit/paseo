@@ -925,16 +925,26 @@ class HeldReloadCloseClient extends TestAgentClient {
 class NativeArchiveRecordingClient extends TestAgentClient {
   readonly archivedHandles: AgentPersistenceHandle[] = [];
   readonly unarchivedHandles: AgentPersistenceHandle[] = [];
+  readLiveDuringArchive: (() => boolean) | null = null;
+  liveDuringArchive: boolean | null = null;
   readArchivedAtDuringUnarchive: (() => Promise<string | null | undefined>) | null = null;
+  readLiveDuringUnarchive: (() => boolean) | null = null;
   archivedAtDuringUnarchive: string | null | undefined;
+  liveDuringUnarchive: boolean | null = null;
   unarchiveFailure: Error | null = null;
 
   async archiveNativeSession(handle: AgentPersistenceHandle): Promise<void> {
     this.archivedHandles.push(handle);
+    if (this.readLiveDuringArchive) {
+      this.liveDuringArchive = this.readLiveDuringArchive();
+    }
   }
 
   async unarchiveNativeSession(handle: AgentPersistenceHandle): Promise<void> {
     this.unarchivedHandles.push(handle);
+    if (this.readLiveDuringUnarchive) {
+      this.liveDuringUnarchive = this.readLiveDuringUnarchive();
+    }
     if (this.readArchivedAtDuringUnarchive) {
       this.archivedAtDuringUnarchive = await this.readArchivedAtDuringUnarchive();
     }
@@ -1941,6 +1951,24 @@ test("steering records concurrent early echoes as canonical submitted prompts", 
   }
 });
 
+class StartRecordingTestAgentSession extends TestAgentSession {
+  startTurnCalls = 0;
+
+  override async startTurn(): Promise<{ turnId: string }> {
+    this.startTurnCalls += 1;
+    return super.startTurn();
+  }
+}
+
+class StartRecordingTestAgentClient extends TestAgentClient {
+  session: StartRecordingTestAgentSession | null = null;
+
+  override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    this.session = new StartRecordingTestAgentSession(config);
+    return this.session;
+  }
+}
+
 class McpCapableTestAgentClient extends TestAgentClient {
   override readonly capabilities = {
     ...TEST_CAPABILITIES,
@@ -2451,6 +2479,72 @@ test("reload closes both sessions when the closed snapshot cannot be persisted",
     client.finishClosing();
     await manager.flushForShutdown().catch(() => undefined);
     await storage.flush().catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("queues provider turns until workspace setup completes", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-setup-gate-test-"));
+  const client = new StartRecordingTestAgentClient();
+  const setup = deferred<void>();
+  let setupPending = true;
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    workspaceSetupReadiness: {
+      isPending: () => setupPending,
+      waitUntilReady: () => setup.promise,
+    },
+    logger,
+  });
+
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "ws-setting-up",
+    });
+
+    const dispatch = await startAgentRun(manager, agent.id, "wait for setup", logger);
+    expect(dispatch).toEqual({ disposition: "queued" });
+    expect(client.session?.startTurnCalls).toBe(0);
+
+    setupPending = false;
+    setup.resolve();
+    await vi.waitFor(() => expect(client.session?.startTurnCalls).toBe(1));
+  } finally {
+    setup.resolve();
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("reports queued turns as failed when workspace setup fails", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-setup-failure-test-"));
+  const client = new StartRecordingTestAgentClient();
+  const setup = deferred<void>();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    workspaceSetupReadiness: {
+      isPending: () => true,
+      waitUntilReady: () => setup.promise,
+    },
+    logger,
+  });
+
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "ws-failed-setup",
+    });
+
+    const dispatch = await startAgentRun(manager, agent.id, "must not run", logger);
+    expect(dispatch.disposition).toBe("queued");
+    setup.reject(new Error("database setup failed"));
+
+    await vi.waitFor(() => expect(manager.getAgent(agent.id)?.lifecycle).toBe("error"));
+    expect(manager.getAgent(agent.id)?.lastError).toContain("database setup failed");
+    expect(client.session?.startTurnCalls).toBe(0);
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
     rmSync(workdir, { recursive: true, force: true });
   }
 });
@@ -8097,6 +8191,71 @@ test("unarchiveSnapshot unarchives native provider storage before clearing archi
   expect(stored?.archivedAt).toBeNull();
   expect(stored?.workspaceId).toBe("ws-restored");
   expect(stored?.labels).toEqual({ retained: "yes", source: "reimport" });
+});
+
+test("archiveAgent releases the live provider before archiving its native session", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-archive-order-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+  const client = new NativeArchiveRecordingClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+  });
+
+  const agent = await manager.createAgent(
+    {
+      provider: "codex",
+      cwd: workdir,
+      title: "Native archive ordering target",
+    },
+    undefined,
+    { workspaceId: undefined },
+  );
+  client.readLiveDuringArchive = () => manager.getAgent(agent.id) !== null;
+
+  await manager.archiveAgent(agent.id);
+
+  expect(client.archivedHandles).toHaveLength(1);
+  expect(client.liveDuringArchive).toBe(false);
+});
+
+test("unarchiveSnapshot closes an archived history runtime before native unarchive", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-unarchive-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+  const client = new NativeArchiveRecordingClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+  });
+
+  const agent = await manager.createAgent(
+    {
+      provider: "codex",
+      cwd: workdir,
+      title: "Archived history runtime",
+    },
+    undefined,
+    { workspaceId: undefined },
+  );
+  await manager.archiveAgent(agent.id);
+  await ensureAgentLoaded(agent.id, {
+    agentManager: manager,
+    agentStorage: storage,
+    logger,
+  });
+  expect(manager.getAgent(agent.id)).toBeDefined();
+  client.readLiveDuringUnarchive = () => manager.getAgent(agent.id) !== null;
+
+  const unarchived = await manager.unarchiveSnapshot(agent.id);
+
+  expect(unarchived).toBe(true);
+  expect(client.liveDuringUnarchive).toBe(false);
+  expect(manager.getAgent(agent.id)).toBeNull();
+  expect((await storage.get(agent.id))?.archivedAt).toBeNull();
 });
 
 test("unarchiveSnapshotByHandle unarchives native provider storage for the matched snapshot", async () => {

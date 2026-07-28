@@ -90,6 +90,33 @@ describe("createSidebarWorkspaceEntry workspace directory label", () => {
   });
 });
 
+describe("createSidebarWorkspaceEntry setup activity", () => {
+  it("keeps a workspace in Working while its setup is running", () => {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+
+    const entry = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: descriptor,
+      runningWorkspaceSetupKeys: new Set(["srv:ws-1"]),
+    });
+
+    expect(entry.statusBucket).toBe("running");
+  });
+
+  it("does not hide a setup failure behind running activity", () => {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+    descriptor.status = "failed";
+
+    const entry = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: descriptor,
+      runningWorkspaceSetupKeys: new Set(["srv:ws-1"]),
+    });
+
+    expect(entry.statusBucket).toBe("failed");
+  });
+});
+
 interface OrderedItem {
   key: string;
 }
@@ -764,6 +791,18 @@ describe("deriveProjectStatusBucket", () => {
         },
       }),
     ).toBe("done");
+  });
+
+  it("is running while one workspace setup is running", () => {
+    expect(
+      deriveProjectStatusBucket({
+        workspaces: [workspacePlacement({ workspaceId: "ws-1" })],
+        sessions: {
+          srv: sessionWith({ workspaces: [projectWorkspace("ws-1", "done")] }),
+        },
+        runningWorkspaceSetupKeys: new Set(["srv:ws-1"]),
+      }),
+    ).toBe("running");
   });
 
   it("surfaces the most urgent workspace status in the project", () => {

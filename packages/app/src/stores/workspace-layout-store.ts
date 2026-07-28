@@ -103,6 +103,10 @@ interface WorkspaceLayoutStore {
     target: WorkspaceTabTarget,
     options?: WorkspaceTabOpenOptions,
   ) => string | null;
+  openTabInMainPane: (
+    workspaceKey: string,
+    input: { target: WorkspaceTabTarget; focused: boolean },
+  ) => string | null;
   openTabInExplorerPaneBackground: (
     workspaceKey: string,
     target: WorkspaceTabTarget,
@@ -555,6 +559,38 @@ export function createWorkspaceLayoutStore(
           }));
 
           return result.tabId;
+        },
+        openTabInMainPane: (workspaceKey, input) => {
+          const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+          const normalizedTarget = normalizeWorkspaceTabTarget(input.target);
+          if (!normalizedWorkspaceKey || !normalizedTarget) {
+            return null;
+          }
+
+          const store = get();
+          const layout = getWorkspaceLayout(store.layoutByWorkspace, normalizedWorkspaceKey);
+          const mainPane = findPaneById(layout.root, "main");
+          if (!mainPane) {
+            return null;
+          }
+          const originalFocusedPaneId = layout.focusedPaneId;
+          store.focusPane(normalizedWorkspaceKey, mainPane.id);
+          const tabId = input.focused
+            ? get().openTabFocused(normalizedWorkspaceKey, normalizedTarget)
+            : get().openTabInBackground(normalizedWorkspaceKey, normalizedTarget);
+          if (!tabId) {
+            return null;
+          }
+          const currentLayout = getWorkspaceLayout(get().layoutByWorkspace, normalizedWorkspaceKey);
+          if (findPaneContainingTab(currentLayout.root, tabId)?.id !== mainPane.id) {
+            get().moveTabToPane(normalizedWorkspaceKey, tabId, mainPane.id);
+          }
+          if (input.focused) {
+            get().focusTab(normalizedWorkspaceKey, tabId);
+          } else if (originalFocusedPaneId && originalFocusedPaneId !== mainPane.id) {
+            get().focusPane(normalizedWorkspaceKey, originalFocusedPaneId);
+          }
+          return tabId;
         },
         openTabInExplorerPaneBackground: (workspaceKey, target) => {
           const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);

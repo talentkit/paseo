@@ -1,8 +1,9 @@
 ## Fork Differences
 
-This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carries one local feature commit:
+This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carries two local feature commits:
 
 1. **Launch websites from the workspace top bar.** Project scripts can define an HTTP or HTTPS `url`, including a `{workspacePath}` placeholder. Paseo resolves these links for the active workspace and exposes them from the top-bar Open menu, so a service or other project website can be launched directly in the client browser. Older hosts are capability-gated and prompt the user to update instead of attempting a degraded fallback.
+2. **Reliable worktree setup before agent work.** Creating a workspace and its idle agent returns immediately while setup commands continue in the background with throttled, visible progress. Provider turns, configured terminals, and generated workspace metadata wait for the shared setup result, long-running setup is not subject to the client's former 60-second deadline, duplicate submissions cannot create duplicate agents, and setup state survives daemon restarts. Failures remain visible on the created agent and block dependent work; archiving the final workspace for a worktree cancels the setup process tree, and setup/config handling avoids leaking source-only lifecycle files into unrelated target refs.
 
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
