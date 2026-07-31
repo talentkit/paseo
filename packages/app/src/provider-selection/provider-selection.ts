@@ -289,7 +289,9 @@ export function resolveEffectiveComposerModeId(
   if (isModelLoading) {
     return selectedModeId;
   }
-  const modeIds = selection.modeOptions.map((mode) => mode.id);
+  const modeIds = selection.modeOptions
+    .filter((mode) => mode.disabledReason === undefined)
+    .map((mode) => mode.id);
   return modeIds.includes(selectedModeId) ? selectedModeId : (modeIds[0] ?? "");
 }
 
