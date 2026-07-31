@@ -8,7 +8,8 @@ export function resolveNextAgentModeId({
   modeOptions: readonly AgentMode[];
   selectedMode: string | null | undefined;
 }): string | null {
-  return resolveNextChoiceId(modeOptions, selectedMode);
+  const enabledModes = modeOptions.filter((mode) => mode.disabledReason === undefined);
+  return resolveNextChoiceId(enabledModes, selectedMode);
 }
 
 export function resolveNextChoiceId(
@@ -16,7 +17,6 @@ export function resolveNextChoiceId(
   selectedId: string | null | undefined,
 ): string | null {
   if (options.length < 2) return null;
-
   const selectedIndex = options.findIndex((option) => option.id === selectedId);
   const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
   return options[(currentIndex + 1) % options.length].id;

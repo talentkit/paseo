@@ -12,6 +12,7 @@ export interface ComboboxOptionModel {
   description?: string;
   /** Additional text to match without displaying it in the option row. */
   searchText?: string;
+  disabledReason?: string;
   kind?: ComboboxOptionKind;
 }
 
