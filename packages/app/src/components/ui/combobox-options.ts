@@ -6,6 +6,7 @@ export interface ComboboxOptionModel {
   id: string;
   label: string;
   description?: string;
+  disabledReason?: string;
   kind?: ComboboxOptionKind;
 }
 
