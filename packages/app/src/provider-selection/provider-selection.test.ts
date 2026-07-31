@@ -488,6 +488,22 @@ describe("resolveEffectiveComposerModeId", () => {
     ).toBe("build");
   });
 
+  it("drops a remembered mode that the current runtime disables", () => {
+    expect(
+      resolveEffectiveComposerModeId(
+        {
+          ...selection,
+          modeId: "bypassPermissions",
+          modeOptions: [
+            { id: "bypassPermissions", label: "Bypass", disabledReason: "Unavailable as root" },
+            { id: "default", label: "Default" },
+          ],
+        },
+        false,
+      ),
+    ).toBe("default");
+  });
+
   it("keeps a selected mode the provider offers", () => {
     expect(
       resolveEffectiveComposerModeId(
