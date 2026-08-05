@@ -178,3 +178,20 @@ The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is
 ## Debugging
 
 Find the complete daemon logs and traces in the $PASEO_HOME/daemon.log
+
+## Fork contribution workflow
+
+This checkout is the `talentkit/paseo` fork. For fork changes that may also be proposed upstream:
+
+1. Complete and verify the change on the fork's `main` branch.
+2. Update the root `README.md` Fork Differences section to explain the fork-specific addition.
+3. Keep the complete fork change, including its README entry, in exactly one commit. Amend or squash fixups before pushing.
+4. Push that single commit to `origin/main`.
+5. Create a separate contribution branch from the latest `upstream/main`.
+6. Apply a targeted version of the change as exactly one commit. Exclude the fork's README entry and every unrelated fork change.
+7. Push the contribution branch to `origin` and open a pull request against `getpaseo/paseo:main`. Follow [PR #2558](https://github.com/getpaseo/paseo/pull/2558) as the reference structure.
+8. When addressing review feedback, amend both the contribution commit and the corresponding fork `main` commit, then update each remote with `--force-with-lease`. Keep the README change only on fork `main`.
+
+## Local overrides
+
+Also read the file `CLAUDE.local.md`, if exists.
