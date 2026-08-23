@@ -106,6 +106,7 @@ import { recordRenderProfileReasons } from "@/utils/render-profiler";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useStreamHistoryWindow } from "./use-stream-history-window";
 import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins/timeline";
+import { usePreferredFileOpenTarget } from "@/workspace/use-preferred-file-open-target";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -400,6 +401,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    const openFileInPreferredTarget = usePreferredFileOpenTarget({
+      serverId: resolvedServerId,
+      workspaceDirectory: workspaceRoot,
+    });
     const { requestDirectoryListing } = useFileExplorerActions({
       serverId: resolvedServerId,
       workspaceId: context.workspaceId,
@@ -496,6 +501,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           },
           view: "files",
         });
+      },
+    );
+
+    const handleInlinePathPreferredTargetPress = useStableEvent(
+      async (target: InlinePathTarget): Promise<boolean> => {
+        if (!target.path) {
+          return false;
+        }
+        const normalized = normalizeInlinePathTarget(target.path, context.cwd);
+        if (!normalized?.file) {
+          return false;
+        }
+        const location = normalizeWorkspaceFileLocation({
+          path: normalized.file,
+          lineStart: target.lineStart,
+          lineEnd: target.lineEnd,
+        });
+        return location ? openFileInPreferredTarget(location) : false;
       },
     );
 
@@ -723,6 +746,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
             onOpenWorkspaceFile={handleInlinePathPress}
+            onOpenWorkspaceFileInPreferredTarget={handleInlinePathPreferredTargetPress}
             toast={toast}
           >
             <ChatFindExpansion messageId={getStreamItemMessageId(item)}>
@@ -743,7 +767,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           </AssistantFileLinkResolverProvider>
         );
       },
-      [agentId, client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        agentId,
+        client,
+        handleInlinePathPress,
+        handleInlinePathPreferredTargetPress,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(
