@@ -1,12 +1,19 @@
 import { Text } from "react-native";
-import { forwardRef, useCallback, useMemo, useState, type ComponentProps } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useState,
+  type MouseEvent,
+  type ComponentProps,
+} from "react";
 import type {
   CodeBlockRendererProps,
   LinkRendererProps,
   MarkdownRenderers,
 } from "react-native-enriched-markdown";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { useFileLink } from "@/assistant-file-links";
+import { useAssistantFileLinkActions, useFileLink } from "@/assistant-file-links";
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
@@ -35,10 +42,12 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   const forgeShorthand = useForgeShorthand();
   // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
   const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;
-  const { tooltipPath, onHoverIn } = useFileLink(
+  const { tooltipPath, onHoverIn, onOpenInPreferredTarget } = useFileLink(
     forgeUrl ? markdownLinkSource(forgeUrl) : markdownLinkSource(link.url, link.sourceType),
   );
   const tooltip = forgeUrl ?? tooltipPath;
+  const source = markdownLinkSource(link.url, link.sourceType);
+  const actions = useAssistantFileLinkActions();
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -50,11 +59,22 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
     }),
     [anchorProps.style, hovered],
   );
+  const handleClickCapture = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if ((event.ctrlKey || event.metaKey) && actions.canResolveFile(source)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenInPreferredTarget();
+      }
+    },
+    [actions, source, onOpenInPreferredTarget],
+  );
   const anchor = (
     <a
       {...anchorProps}
       href={forgeUrl ?? anchorProps.href}
       style={anchorStyle}
+      onClickCapture={handleClickCapture}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
