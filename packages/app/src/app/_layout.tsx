@@ -8,6 +8,7 @@ import {
   resolveDesktopDivisionLayout,
 } from "@/window-layout";
 import { AddHostProvider, AddHostFlowHost } from "@/hosts/add-host";
+import { useStableEvent } from "@/hooks/use-stable-event";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useIsExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
@@ -27,6 +28,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -77,7 +79,7 @@ import { isNative, isWeb } from "@/constants/platform";
 import { HorizontalScrollProvider } from "@/contexts/horizontal-scroll-context";
 import { SessionProvider } from "@/contexts/session-context";
 import { SidebarCalloutProvider } from "@/contexts/sidebar-callout-context";
-import { ToastProvider } from "@/contexts/toast-context";
+import { ToastProvider, useToast } from "@/contexts/toast-context";
 import { VoiceProvider } from "@/contexts/voice-context";
 import {
   resolveStartupBlocker,
@@ -110,7 +112,8 @@ import { useFaviconStatus } from "@/hooks/use-favicon-status";
 import { useKeyboardShortcuts } from "@/keyboard/use-shortcuts";
 import { KeyboardShiftProvider } from "@/keyboard/shift";
 import { useCompactWebViewportZoomLock } from "@/hooks/use-compact-web-viewport-zoom-lock";
-import { useOpenProject } from "@/hooks/use-open-project";
+import { openProjectWorkspace } from "@/desktop/open-project-workspace";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useOpenAgentListGesture } from "@/mobile-panels/gestures";
 import { MobilePanelsProvider, useIsMobilePanelActive } from "@/mobile-panels/provider";
@@ -131,7 +134,7 @@ import { getDaemonStartService } from "@/runtime/daemon-start-service";
 import { usePanelStore, type LeftSidebarPresentation } from "@/stores/panel-store";
 import { flushDraftPersistStorage } from "@/stores/draft-store";
 import { getNextThemePreference, ICON_STROKE_WIDTH } from "@/styles/theme";
-import { useSessionStore } from "@/stores/session-store";
+import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
 import { WorkspaceLayoutModePublisher } from "@/workspace-tabs/layout-mode-publisher";
 import { installWebScrollbarStyles } from "@/styles/install-web-scrollbar-styles";
 import type { HostProfile } from "@/types/host-connection";
@@ -703,6 +706,8 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
       <VoiceProvider>
         <DesktopWindowControlsSync />
         <OfferLinkListener />
+        {/* Appearance hydration remounts the boundary below. Keep consumed CLI requests here. */}
+        <OpenProjectListener />
         <HostSessionManager />
         <FaviconStatusSync />
         {children}
@@ -780,33 +785,40 @@ function OpenProjectListener() {
   const hostRegistryLoaded = useHostRegistryLoaded();
   const [request, setRequest] = useState<PendingOpenProjectRequest | null>(null);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
-  const openProject = useOpenProject(request?.serverId ?? null);
-
-  const openPathOnChosenHost = useCallback(
-    (path: string) => {
-      const nextPath = path.trim();
-      if (!nextPath) {
-        return;
-      }
-
-      if (!hostRegistryLoaded) {
-        setPendingPath(nextPath);
-        return;
-      }
-
-      chooseHost({
-        title: "Choose host",
-        onChooseHost: (serverId) => {
-          setRequest({
-            id: nextOpenProjectRequestId++,
-            serverId,
-            path: nextPath,
-          });
-        },
-      });
-    },
-    [chooseHost, hostRegistryLoaded],
+  const toast = useToast();
+  const client = useHostRuntimeClient(request?.serverId ?? "");
+  const isConnected = useHostRuntimeIsConnected(request?.serverId ?? "");
+  const serverInfo = useSessionStore((state) =>
+    request ? state.sessions[request.serverId]?.serverInfo : null,
   );
+  const pendingProject = useRef<Promise<string | null> | null>(null);
+  const opening = useRef<{
+    requestId: number;
+    promise: ReturnType<typeof openProjectWorkspace>;
+  } | null>(null);
+
+  const openPathOnChosenHost = useStableEvent((path: string) => {
+    const nextPath = path.trim();
+    if (!nextPath) {
+      return;
+    }
+
+    if (!hostRegistryLoaded) {
+      setPendingPath(nextPath);
+      return;
+    }
+
+    chooseHost({
+      title: "Choose host",
+      onChooseHost: (serverId) => {
+        setRequest({
+          id: nextOpenProjectRequestId++,
+          serverId,
+          path: nextPath,
+        });
+      },
+    });
+  });
 
   useEffect(() => {
     if (!hostRegistryLoaded || !pendingPath) {
@@ -818,33 +830,58 @@ function OpenProjectListener() {
   }, [hostRegistryLoaded, openPathOnChosenHost, pendingPath]);
 
   useEffect(() => {
-    if (!request) {
+    if (!request || !isConnected || !client || !serverInfo) {
       return;
     }
+    if (!serverInfo.features?.workspaceMultiplicity || !serverInfo.features.projectAdd) {
+      toast.show("Update the host to open a workspace from the desktop CLI.", {
+        variant: "error",
+        durationMs: null,
+      });
+      setRequest(null);
+      return;
+    }
+    if (opening.current?.requestId !== request.id) {
+      toast.show(`Opening ${request.path}…`, { durationMs: null });
+      opening.current = {
+        requestId: request.id,
+        promise: openProjectWorkspace({ client, path: request.path }),
+      };
+    }
     let cancelled = false;
-    void openProject(request.path).then((result) => {
-      if (cancelled) {
-        return null;
-      }
-
-      if (!result.ok) {
-        setRequest((current) => (current?.id === request.id ? null : current));
-        return null;
-      }
-
-      setRequest((current) => (current?.id === request.id ? null : current));
-      return null;
-    });
+    void opening.current.promise
+      .then((workspace) => {
+        if (cancelled) return;
+        useSessionStore
+          .getState()
+          .mergeWorkspaces(request.serverId, [normalizeWorkspaceDescriptor(workspace)]);
+        navigateToWorkspace({ serverId: request.serverId, workspaceId: workspace.id });
+        toast.show(`Opened ${workspace.name}`, { variant: "success" });
+        return;
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        toast.show(`Unable to open ${request.path}: ${message}`, {
+          variant: "error",
+          durationMs: null,
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setRequest((current) => (current?.id === request.id ? null : current));
+      });
     return () => {
       cancelled = true;
     };
-  }, [openProject, request]);
+  }, [client, isConnected, request, serverInfo, toast]);
 
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    void getDesktopHost()
-      ?.getPendingOpenProject?.()
+    // The desktop consumes this path on read. Keep the same promise through
+    // effect replays so startup hydration cannot discard the launch request.
+    pendingProject.current ??= getDesktopHost()?.getPendingOpenProject?.() ?? null;
+    void pendingProject.current
       ?.then((pending) => {
         if (!disposed && pending) {
           openPathOnChosenHost(pending);
@@ -960,7 +997,6 @@ function AppShell() {
   return (
     <MobilePanelsProvider>
       <HorizontalScrollProvider>
-        <OpenProjectListener />
         <AgentNavigationListener />
         <AppWithSidebar>
           <WorkspaceRouteNavigationBridge />
