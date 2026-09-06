@@ -1,11 +1,14 @@
 ## Fork Differences
 
-This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carries four local feature commits:
+This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carries these local changes:
 
 1. **Launch websites from the workspace top bar.** Project scripts can define an HTTP or HTTPS `url`, including a `{workspacePath}` placeholder. Paseo resolves these links for the active workspace and exposes them from the top-bar Open menu, so a service or other project website can be launched directly in the client browser. Older hosts are capability-gated and prompt the user to update instead of attempting a degraded fallback.
 2. **Reliable worktree setup before agent work.** New branch-off workspaces obtain their model-generated title and branch before creation, use that branch as the worktree directory name, and keep collision suffixes paired so setup receives final workspace identifiers. Creating the workspace and its idle agent then returns while setup commands continue in the background with throttled progress revealed in the Setup tab. Provider turns and configured terminals wait for the shared setup result, long-running setup is not subject to the client's former 60-second deadline, duplicate submissions cannot create duplicate agents, and setup state survives daemon restarts. Failures remain visible on the created agent and block dependent work; archiving the final workspace for a worktree cancels the setup process tree, and setup/config handling avoids leaking source-only lifecycle files into unrelated target refs.
 3. **Claude support when the daemon runs as root.** Claude Code rejects permission-bypass launch flags under UID 0. Paseo now detects that constraint, omits the SDK's dangerous-skip capability, and keeps Claude usable in its normal permission modes. Bypass remains visible but disabled with an explanation, and server-side validation prevents drafts, schedules, inherited subagents, or live mode changes from selecting it.
 4. **Open assistant file links in the selected external target.** Ctrl-clicking a resolved assistant file link opens it in the current file-aware Open target; Cmd-click does the same on macOS. Editors receive the file and referenced line, file managers reveal the file, and supported forges open its branch URL. When the selected target cannot handle the workspace, Paseo keeps the normal side-pane behavior.
+
+5. **Open folders as workspaces from the CLI.** `paseo .` waits for Desktop's host connection, opens an existing workspace for the folder or creates one, and reports failures in the app. Linux AppImage launches pass the required sandbox flag before Electron starts, and launch errors reach the terminal.
+6. **Linux Desktop taskbar identity.** Packaged Linux windows include the Paseo icon and use the same window class as the application launcher, so the taskbar recognizes the app after startup.
 
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
