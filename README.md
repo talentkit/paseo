@@ -7,6 +7,9 @@ This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carri
 3. **Claude support when the daemon runs as root.** Claude Code rejects permission-bypass launch flags under UID 0. Paseo now detects that constraint, omits the SDK's dangerous-skip capability, and keeps Claude usable in its normal permission modes. Bypass remains visible but disabled with an explanation, and server-side validation prevents drafts, schedules, inherited subagents, or live mode changes from selecting it.
 4. **Open assistant file links in the selected external target.** Ctrl-clicking a resolved assistant file link opens it in the current file-aware Open target; Cmd-click does the same on macOS. Editors receive the file and referenced line, file managers reveal the file, and supported forges open its branch URL. When the selected target cannot handle the workspace, Paseo keeps the normal side-pane behavior.
 
+5. **Open folders as workspaces from the CLI.** `paseo .` waits for Desktop's host connection, opens an existing workspace for the folder or creates one, and reports failures in the app. Linux AppImage launches pass the required sandbox flag before Electron starts, and launch errors reach the terminal.
+6. **Linux Desktop taskbar identity.** Packaged Linux windows include the Paseo icon and use the same window class as the application launcher, so the taskbar recognizes the app after startup.
+
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
 </p>
