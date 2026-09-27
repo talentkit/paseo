@@ -9,6 +9,7 @@ This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carri
 
 5. **Open folders as workspaces from the CLI.** `paseo .` waits for Desktop's host connection, opens an existing workspace for the folder or creates one, and reports failures in the app. Linux AppImage launches pass the required sandbox flag before Electron starts, and launch errors reach the terminal.
 6. **Linux Desktop taskbar identity.** Packaged Linux windows include the Paseo icon and use the same window class as the application launcher, so the taskbar recognizes the app after startup.
+7. **Focus the chat feed by clicking it.** Clicking message text or empty space gives the feed keyboard focus, so Page Up and Page Down scroll the conversation. Text selection and nested controls keep their normal browser behavior.
 
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
