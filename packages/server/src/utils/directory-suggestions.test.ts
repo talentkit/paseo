@@ -402,31 +402,37 @@ describe("searchDirectoryEntries", () => {
     ).resolves.toEqual([{ path: "src/search-target.ts", kind: "file" }]);
   });
 
-  it.skipIf(isWindows)("rechecks cached symlink children against each search root", async () => {
-    const narrowRoot = path.join(searchRoot, "narrow");
-    const outsideNarrowRoot = path.join(searchRoot, "outside");
-    mkdirSync(narrowRoot, { recursive: true });
-    mkdirSync(path.join(outsideNarrowRoot, "leaked-child"), { recursive: true });
-    symlinkSync(outsideNarrowRoot, path.join(narrowRoot, "outside-link"));
+  it.skipIf(isWindows)(
+    "discovers external symlink children using their visible paths",
+    async () => {
+      const narrowRoot = path.join(searchRoot, "narrow");
+      const outsideNarrowRoot = path.join(searchRoot, "outside");
+      mkdirSync(narrowRoot, { recursive: true });
+      mkdirSync(path.join(outsideNarrowRoot, "leaked-child"), { recursive: true });
+      symlinkSync(outsideNarrowRoot, path.join(narrowRoot, "outside-link"));
 
-    await searchDirectoryEntries({
-      root: searchRoot,
-      query: "leaked-child",
-      pathFormat: "absolute",
-      includeFiles: false,
-      includeDirectories: true,
-    });
-
-    await expect(
-      searchDirectoryEntries({
-        root: narrowRoot,
-        query: "outside",
-        pathFormat: "relative",
+      await searchDirectoryEntries({
+        root: searchRoot,
+        query: "leaked-child",
+        pathFormat: "absolute",
         includeFiles: false,
         includeDirectories: true,
-      }),
-    ).resolves.toEqual([]);
-  });
+      });
+
+      await expect(
+        searchDirectoryEntries({
+          root: narrowRoot,
+          query: "outside",
+          pathFormat: "relative",
+          includeFiles: false,
+          includeDirectories: true,
+        }),
+      ).resolves.toEqual([
+        { path: "outside-link", kind: "directory" },
+        { path: "outside-link/leaked-child", kind: "directory" },
+      ]);
+    },
+  );
 
   it.skipIf(isWindows)("rechecks a cached symlink after its target changes", async () => {
     const narrowRoot = path.join(searchRoot, "retargeted-link-root");
@@ -449,16 +455,17 @@ describe("searchDirectoryEntries", () => {
 
     unlinkSync(link);
     symlinkSync(outsideTarget, link);
+    mkdirSync(path.join(outsideTarget, "external-child"));
 
     await expect(
       searchDirectoryEntries({
         root: narrowRoot,
-        query: "project-link",
+        query: "external-child",
         pathFormat: "relative",
         includeFiles: false,
         includeDirectories: true,
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual([{ path: "project-link/external-child", kind: "directory" }]);
   });
 
   it("refreshes a cached directory after a child is created", async () => {
@@ -674,16 +681,14 @@ describe("absolute directory-path configuration", () => {
     expect(earlierIndex).toBeLessThan(laterIndex);
   });
 
-  // POSIX-only: creates and follows a symlink escape fixture.
-  it.skipIf(isWindows)("does not return paths that escape home through symlinks", async () => {
+  it.skipIf(isWindows)("discovers paths outside home through symlinks", async () => {
     const results = await searchAbsoluteDirectoryPaths({
       homeDir,
       query: "outside",
       limit: 20,
     });
 
-    expect(results).not.toContain(path.join(homeDir, "outside-link"));
-    expect(results).not.toContain(path.join(outsideDir, "outside-match"));
+    expect(results).toEqual([path.join(homeDir, "outside-link")]);
   });
 
   it("respects the result limit", async () => {
@@ -821,6 +826,50 @@ describe("relative typed-entry configuration", () => {
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
+  it("completes explicit paths outside the workspace without scanning descendants", async () => {
+    const outside = path.join(tempRoot, "outside");
+    mkdirSync(path.join(outside, "nested"), { recursive: true });
+    writeFileSync(path.join(outside, "notes.md"), "outside\n");
+    writeFileSync(path.join(outside, "nested", "notes.md"), "nested\n");
+    writeFileSync(path.join(outside, ".hidden"), "hidden\n");
+    const common = {
+      root: workspaceDir,
+      pathFormat: "absolute" as const,
+      pathQueryPolicy: "complete" as const,
+      includeFiles: true,
+      includeDirectories: true,
+    };
+
+    await expect(
+      searchDirectoryEntries({ ...common, query: path.join(outside, "not") }),
+    ).resolves.toEqual([{ path: path.join(outside, "notes.md"), kind: "file" }]);
+    await expect(searchDirectoryEntries({ ...common, query: "../outside/.h" })).resolves.toEqual([
+      { path: path.join(outside, ".hidden"), kind: "file" },
+    ]);
+    await expect(searchDirectoryEntries({ ...common, query: `${outside}/` })).resolves.toEqual([
+      { path: path.join(outside, "nested"), kind: "directory" },
+      { path: path.join(outside, ".hidden"), kind: "file" },
+      { path: path.join(outside, "notes.md"), kind: "file" },
+    ]);
+    await expect(
+      searchDirectoryEntries({ ...common, query: path.join(outside, "missing", "notes") }),
+    ).resolves.toEqual([]);
+    await expect(
+      searchDirectoryEntries({
+        ...common,
+        query: path.join(outside, "notes.m"),
+        matchMode: "suffix",
+      }),
+    ).resolves.toEqual([]);
+    await expect(
+      searchDirectoryEntries({
+        ...common,
+        query: path.join(outside, "notes.md"),
+        matchMode: "suffix",
+      }),
+    ).resolves.toEqual([{ path: path.join(outside, "notes.md"), kind: "file" }]);
+  });
+
   it("ranks fuzzy basename matches after exact, prefix, and substring matches", async () => {
     writeFileSync(path.join(workspaceDir, "src", "components", "msgrndr"), "");
     writeFileSync(path.join(workspaceDir, "src", "components", "msgrndr-panel.tsx"), "");
@@ -947,7 +996,7 @@ describe("relative typed-entry configuration", () => {
   });
 
   it.skipIf(isWindows)(
-    "refuses an exact path that escapes the root through a symlink",
+    "resolves an exact file through a symlink outside the workspace",
     async () => {
       const outsideDir = path.join(tempRoot, "outside-workspace");
       mkdirSync(outsideDir, { recursive: true });
@@ -973,7 +1022,7 @@ describe("relative typed-entry configuration", () => {
       });
 
       expect({ escaping, staysInside }).toEqual({
-        escaping: [],
+        escaping: [{ path: "escape-link/secret.md", kind: "file" }],
         staysInside: [{ path: "inside-link/search-notes.md", kind: "file" }],
       });
     },
@@ -1204,16 +1253,18 @@ describe("home-tree scan cost", () => {
   });
 
   it.skipIf(isWindows)(
-    "derives containment for symlinked entries, which can leave the root",
+    "follows external symlinks without containment checks and stops cycles",
     async () => {
       const outside = realpathSync.native(mkdtempSync(path.join(tmpdir(), "directory-scan-away-")));
       symlinkSync(outside, path.join(scanRoot, "escape"), "dir");
+      mkdirSync(path.join(outside, "nomatch"));
+      symlinkSync(scanRoot, path.join(outside, "back"), "dir");
 
       const checks = await countContainmentChecks(scanWholeTree);
 
-      expect({ checked: checks > 0, escaped: (await scanWholeTree()).includes(outside) }).toEqual({
-        checked: true,
-        escaped: false,
+      expect({ checks, entries: await scanWholeTree() }).toEqual({
+        checks: 0,
+        entries: [path.join(scanRoot, "escape", "nomatch")],
       });
       rmSync(outside, { recursive: true, force: true });
     },

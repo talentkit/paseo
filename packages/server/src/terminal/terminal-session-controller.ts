@@ -194,11 +194,8 @@ export class TerminalSessionController {
     if (subscriptions.length === 0) return false;
     const workspaceRoots = await this.listTerminalWorkspaceRoots();
     return subscriptions.some((subscription) => {
-      if (
-        subscription.workspaceId !== undefined &&
-        subscription.workspaceId !== input.workspaceId
-      ) {
-        return false;
+      if (subscription.workspaceId !== undefined) {
+        return subscription.workspaceId === input.workspaceId;
       }
       if (subscription.cwd === undefined) return true;
       return this.terminalBelongsToRoot(subscription.cwd, input.cwd, workspaceRoots);
@@ -327,14 +324,14 @@ export class TerminalSessionController {
   }
 
   private async handleTerminalsChanged(event: TerminalsChangedEvent): Promise<void> {
-    // A terminal can live in a subdirectory of a subscribed workspace root (an
-    // agent can open one there). Deliver the change to every subscribed root at
-    // or above the terminal's cwd, keyed by that root, carrying the full
-    // aggregated list — so the client's cache replacement doesn't drop the
-    // terminals that live directly at the root.
+    // Workspace ownership is independent of cwd. Refresh scoped subscriptions
+    // even when a directory's last terminal exits: the empty event no longer
+    // identifies its workspace. Cwd-only subscriptions retain path aggregation.
     const matchingSubscriptions = Array.from(this.subscribedDirectories.values()).filter(
       (subscription) =>
-        subscription.cwd === undefined || this.isPathWithinRoot(subscription.cwd, event.cwd),
+        subscription.workspaceId !== undefined ||
+        subscription.cwd === undefined ||
+        this.isPathWithinRoot(subscription.cwd, event.cwd),
     );
     for (const subscription of matchingSubscriptions) {
       await this.emitTerminalsSnapshotForSubscription(subscription);
@@ -392,14 +389,7 @@ export class TerminalSessionController {
     const refresh = (async () => {
       do {
         subscription.pending = false;
-        const terminals =
-          subscription.cwd === undefined
-            ? (await this.getAllTerminalSessions()).filter(
-                (terminal) =>
-                  subscription.workspaceId === undefined ||
-                  terminal.workspaceId === subscription.workspaceId,
-              )
-            : await this.getTerminalsForWorkspaceRoot(subscription.cwd, subscription.workspaceId);
+        const terminals = await this.getTerminalSessions(subscription);
         if (subscription.owner.signal.aborted) return;
         subscription.owner.emit({
           type: "terminals_changed",
@@ -442,16 +432,7 @@ export class TerminalSessionController {
     try {
       const unavailable = this.terminalManager.getUnavailableError?.();
       if (unavailable) throw unavailable;
-      let terminals: TerminalSession[];
-      if (msg.workspaceId !== undefined) {
-        terminals = (await this.getAllTerminalSessions()).filter(
-          (terminal) => terminal.workspaceId === msg.workspaceId,
-        );
-      } else if (typeof msg.cwd === "string") {
-        terminals = await this.getTerminalsForWorkspaceRoot(msg.cwd);
-      } else {
-        terminals = await this.getAllTerminalSessions();
-      }
+      const terminals = await this.getTerminalSessions(msg);
       this.emit({
         type: "list_terminals_response",
         payload: {
@@ -516,15 +497,26 @@ export class TerminalSessionController {
     ];
   }
 
-  private async getTerminalsForWorkspaceRoot(
-    cwd: string,
-    workspaceId?: string,
-  ): Promise<TerminalSession[]> {
+  private async getTerminalSessions({
+    cwd,
+    workspaceId,
+  }: Pick<ListTerminalsRequest, "cwd" | "workspaceId">): Promise<TerminalSession[]> {
+    if (workspaceId !== undefined) {
+      return (await this.getAllTerminalSessions()).filter(
+        (terminal) => terminal.workspaceId === workspaceId,
+      );
+    }
+    return cwd === undefined
+      ? this.getAllTerminalSessions()
+      : this.getTerminalsForWorkspaceRoot(cwd);
+  }
+
+  private async getTerminalsForWorkspaceRoot(cwd: string): Promise<TerminalSession[]> {
     if (!this.terminalManager) {
       return [];
     }
 
-    const terminals = await this.terminalManager.getTerminals(cwd, { workspaceId });
+    const terminals = await this.terminalManager.getTerminals(cwd);
     const workspaceRoots = await this.listTerminalWorkspaceRoots();
     if (workspaceRoots.length === 0) {
       return terminals;
