@@ -637,6 +637,107 @@ describe("terminal-session-controller subdirectory aggregation", () => {
 });
 
 describe("terminal-session-controller workspace-scoped subscriptions", () => {
+  test.each(["/work/app", "/work/workspace/nested"])(
+    "lists and streams owned terminals in %s independently of directory placement",
+    async (terminalCwd) => {
+      const cwd = "/work/workspace";
+      const terminal: TerminalSession = {
+        ...listSession({ id: "storybook", name: "Storybook", cwd: terminalCwd }),
+        workspaceId: "ws-a",
+      };
+      const foreignTerminal: TerminalSession = { ...terminal, id: "foreign", workspaceId: "ws-b" };
+      let sessions = [terminal, foreignTerminal];
+      let changedListener: ((event: TerminalsChangedEvent) => void) | null = null;
+      const terminalManager: TerminalManager = {
+        async getTerminals(root, options) {
+          return sessions.filter(
+            (session) =>
+              isSameOrDescendantPath(root, session.cwd) &&
+              (options?.workspaceId === undefined || session.workspaceId === options.workspaceId),
+          );
+        },
+        createTerminal: vi.fn(),
+        registerCwdEnv: vi.fn(),
+        validateTerminalActivityToken: vi.fn(() => "unknown"),
+        getTerminal: vi.fn(),
+        replayTerminal: async () => null,
+        setTerminalTitle: vi.fn(),
+        setTerminalActivity: vi.fn(),
+        killTerminal: vi.fn(),
+        killTerminalAndWait: vi.fn(),
+        captureTerminal: vi.fn(),
+        listDirectories: () => [terminalCwd],
+        killAll: vi.fn(),
+        subscribeTerminalsChanged: (listener) => {
+          changedListener = listener;
+          return vi.fn();
+        },
+        subscribeTerminalActivity: vi.fn(() => vi.fn()),
+        subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+      };
+      const outboundMessages: SessionOutboundMessage[] = [];
+      const controller = createController({
+        terminalManager,
+        emit: (message) => outboundMessages.push(message),
+        emitBinary: vi.fn(),
+        hasBinaryChannel: () => true,
+        isPathWithinRoot: isSameOrDescendantPath,
+        sessionLogger: createLogger(),
+        listTerminalWorkspaceRoots: async () => [cwd, terminalCwd],
+      });
+
+      await controller.dispatch({ type: "list_terminals_request", cwd, workspaceId: "ws-a" });
+      await controller.dispatch({ type: "subscribe_terminals_request", cwd, workspaceId: "ws-a" });
+
+      const expectedTerminal = {
+        id: "storybook",
+        name: "Storybook",
+        workspaceId: "ws-a",
+        activity: null,
+        createdAt: null,
+        isScript: false,
+      };
+      expect(outboundMessages).toMatchObject([
+        {
+          type: "list_terminals_response",
+          payload: { terminals: [{ ...expectedTerminal, cwd: terminalCwd }] },
+        },
+        { type: "terminals_changed", payload: { cwd, terminals: [expectedTerminal] } },
+      ]);
+      await expect(
+        controller.hasDirectorySubscription({ cwd: terminalCwd, workspaceId: "ws-a" }),
+      ).resolves.toBe(true);
+      await expect(
+        controller.hasDirectorySubscription({ cwd: terminalCwd, workspaceId: "ws-b" }),
+      ).resolves.toBe(false);
+
+      outboundMessages.length = 0;
+      sessions = [];
+      changedListener?.({ cwd: terminalCwd, terminals: [] });
+      await flushMicrotasks();
+      expect(outboundMessages).toMatchObject([
+        { type: "terminals_changed", payload: { cwd, terminals: [] } },
+      ]);
+
+      outboundMessages.length = 0;
+      sessions = [terminal, foreignTerminal];
+      changedListener?.({
+        cwd: terminalCwd,
+        terminals: sessions.map((session) => ({
+          id: session.id,
+          name: session.name,
+          cwd: session.cwd,
+          workspaceId: session.workspaceId,
+          activity: null,
+        })),
+      });
+      await flushMicrotasks();
+      expect(outboundMessages).toMatchObject([
+        { type: "terminals_changed", payload: { cwd, terminals: [expectedTerminal] } },
+      ]);
+    },
+  );
+
   test("two workspaces sharing a cwd subscribe and unsubscribe independently", async () => {
     const cwd = "/work/shared";
     const terminalA: TerminalSession = {

@@ -9,7 +9,7 @@ import {
   readlinkSync,
 } from "fs";
 import { rm } from "node:fs/promises";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import path from "path";
 import { execFileSync } from "node:child_process";
 import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
@@ -153,7 +153,7 @@ describe("file explorer", () => {
     },
   );
 
-  test("workspace suggestions exclude exact parent and sibling paths", async () => {
+  test("workspace suggestions resolve parent, absolute and home-relative paths", async () => {
     const directory = tmpCwd();
     const cwd = path.join(directory, "workspace");
     const sibling = path.join(directory, "workspace-other");
@@ -162,10 +162,16 @@ describe("file explorer", () => {
       mkdirSync(sibling);
       writeFileSync(path.join(cwd, "visible.txt"), "inside payload\n");
       writeFileSync(path.join(sibling, "outside.txt"), "outside payload\n");
-      for (const query of [
-        "./..",
-        "../workspace-other/outside.txt",
-        path.join(sibling, "outside.txt"),
+      for (const { query, entry } of [
+        { query: "./..", entry: { path: "..", kind: "directory" } },
+        {
+          query: "../workspace-other/outside.txt",
+          entry: { path: "../workspace-other/outside.txt", kind: "file" },
+        },
+        {
+          query: path.join(sibling, "outside.txt"),
+          entry: { path: "../workspace-other/outside.txt", kind: "file" },
+        },
       ]) {
         const response = await ctx.client.getDirectorySuggestions({
           cwd,
@@ -176,7 +182,21 @@ describe("file explorer", () => {
           matchMode: "suffix",
         });
         expect(response.error).toBeNull();
-        expect(response.entries).toEqual([]);
+        expect(response.entries).toEqual([entry]);
+      }
+      const home = process.env.HOME ?? homedir();
+      const homeRelative = path.relative(home, sibling).split(path.sep).join("/");
+      for (const query of [path.join(sibling, "out"), `~/${homeRelative}/out`]) {
+        const response = await ctx.client.getDirectorySuggestions({
+          cwd,
+          query,
+          includeFiles: true,
+          includeDirectories: true,
+        });
+        expect(response.error).toBeNull();
+        expect(response.entries).toEqual([
+          { path: path.join(sibling, "outside.txt"), kind: "file" },
+        ]);
       }
       const control = await ctx.client.getDirectorySuggestions({
         cwd,
@@ -402,44 +422,64 @@ describe("file explorer", () => {
     }
   });
 
-  test("rejects parent traversal and absolute paths to a sibling workspace", async () => {
+  test("reads, downloads and edits files outside the workspace", async () => {
     const directory = tmpCwd();
     const cwd = path.join(directory, "workspace");
     const outside = path.join(directory, "workspace-sibling");
     try {
       mkdirSync(cwd);
       mkdirSync(outside);
+      execFileSync("git", ["init", "-q"], { cwd });
       writeFileSync(path.join(outside, "secret.txt"), "outside payload\n");
       for (const requestedPath of ["..", "../workspace-sibling", outside]) {
-        await expect(ctx.client.listDirectory(cwd, requestedPath)).rejects.toThrow(
-          "Access outside of workspace is not allowed",
-        );
+        const listing = await ctx.client.listDirectory(cwd, requestedPath);
+        expect(listing.entries.length).toBeGreaterThan(0);
       }
       for (const requestedPath of [
         "../workspace-sibling/secret.txt",
         path.join(outside, "secret.txt"),
       ]) {
-        await expect(ctx.client.readFile(cwd, requestedPath)).rejects.toThrow(
-          "Access outside of workspace is not allowed",
-        );
+        const file = await ctx.client.readFile(cwd, requestedPath);
+        expect(new TextDecoder().decode(file.bytes)).toBe("outside payload\n");
         const download = await ctx.client.requestDownloadToken(cwd, requestedPath);
-        expect(download).toMatchObject({
-          token: null,
-          error: "Access outside of workspace is not allowed",
-        });
-        const deleted = await ctx.client.deleteFileEntry({ cwd, path: requestedPath });
-        expect(deleted).toMatchObject({
-          success: false,
-          error: "Access outside of workspace is not allowed",
-        });
+        expect(download.error).toBeNull();
+        const response = await fetch(
+          `http://127.0.0.1:${ctx.daemon.port}/api/files/download?token=${download.token}`,
+        );
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("outside payload\n");
       }
-      expect(readdirSync(outside)).toEqual(["secret.txt"]);
+      const externalPath = "../workspace-sibling/secret.txt";
+      const subscription = await ctx.client.subscribeFile({ cwd, path: externalPath }, () => {});
+      expect(subscription.initial.status).toBe("ready");
+      await subscription.unsubscribe();
+      const file = await ctx.client.readFile(cwd, externalPath);
+      const written = await ctx.client.writeFile({
+        cwd,
+        path: externalPath,
+        content: "edited outside\n",
+        expectedModifiedAt: file.modifiedAt,
+        expectedRevision: file.revision,
+      });
+      expect(written.status).toBe("written");
+      const renamed = await ctx.client.renameFileEntry({
+        cwd,
+        path: externalPath,
+        name: "renamed.txt",
+      });
+      expect(renamed).toMatchObject({ success: true, error: null });
+      const renamedPath = "../workspace-sibling/renamed.txt";
+      const edited = await ctx.client.readFile(cwd, renamedPath);
+      expect(new TextDecoder().decode(edited.bytes)).toBe("edited outside\n");
+      const deleted = await ctx.client.deleteFileEntry({ cwd, path: renamedPath });
+      expect(deleted).toMatchObject({ success: true, error: null });
+      expect(readdirSync(outside)).toEqual([]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
   });
 
-  test("accepts symlinks to double-dot names inside the workspace and rejects outside targets", async () => {
+  test("browses, resolves and opens symlinks outside the workspace", async () => {
     const directory = tmpCwd();
     const cwd = path.join(directory, "workspace");
     const outside = path.join(directory, "workspace-sibling");
@@ -456,18 +496,33 @@ describe("file explorer", () => {
       expect(listing.entries.map((entry) => entry.path).sort()).toEqual([
         "..drafts",
         "inside-link",
+        "outside-link",
       ]);
+      expect(listing.entries.find((entry) => entry.path === "outside-link")?.kind).toBe(
+        "directory",
+      );
       const file = await ctx.client.readFile(cwd, "inside-link/notes.txt");
       expect(file.path).toBe("inside-link/notes.txt");
       expect(new TextDecoder().decode(file.bytes)).toBe("inside payload\n");
-      await expect(ctx.client.readFile(cwd, "outside-link/secret.txt")).rejects.toThrow(
-        "Access outside of workspace is not allowed",
-      );
-      const download = await ctx.client.requestDownloadToken(cwd, "outside-link/secret.txt");
-      expect(download).toMatchObject({
-        token: null,
-        error: "Access outside of workspace is not allowed",
+      const outsideListing = await ctx.client.listDirectory(cwd, "outside-link");
+      expect(outsideListing.entries.map((entry) => entry.path)).toEqual([
+        "outside-link/secret.txt",
+      ]);
+      const suggestions = await ctx.client.getDirectorySuggestions({
+        cwd,
+        query: "outside-link/secret.txt",
+        matchMode: "suffix",
+        includeFiles: true,
+        includeDirectories: false,
+        limit: 1,
       });
+      expect(suggestions.entries).toEqual([{ path: "outside-link/secret.txt", kind: "file" }]);
+      const externalFile = await ctx.client.readFile(cwd, "outside-link/secret.txt");
+      expect(new TextDecoder().decode(externalFile.bytes)).toBe("outside payload\n");
+      const download = await ctx.client.requestDownloadToken(cwd, "outside-link/secret.txt");
+      expect(download.error).toBeNull();
+      const deleted = await ctx.client.deleteFileEntry({ cwd, path: "outside-link" });
+      expect(deleted).toMatchObject({ success: true, error: null });
       expect(readdirSync(outside)).toEqual(["secret.txt"]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
