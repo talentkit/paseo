@@ -52,7 +52,7 @@ type Grant = {
 
 A delegating principal can grant only authority it already possesses. A session may attenuate its principal's grants but cannot widen them.
 
-Workspace-scoped grants require every resource-bearing operation and outbound observation to enforce the same workspace boundary. File preview currently accepts any daemon-readable regular file, so it must gain resource enforcement before workspace-specific access ships.
+Workspace-scoped grants require every resource-bearing operation and outbound observation to enforce the same workspace boundary. In this fork, file browsing, previews, edits and transfers can reach any path the daemon user can access, including external symlink targets. A workspace cwd supplies a base for relative paths, not an access boundary. These operations must gain resource enforcement before workspace-specific access ships.
 
 ## Hub
 

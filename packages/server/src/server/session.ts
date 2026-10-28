@@ -222,6 +222,7 @@ import {
 import { expandTilde } from "../utils/path.js";
 import {
   searchDirectoryEntries,
+  type PathQueryPolicy,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
 } from "../utils/directory-suggestions.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
@@ -5224,6 +5225,11 @@ export class Session {
       const workspaceCwd = cwd?.trim();
       const searchesWorkspace = Boolean(workspaceCwd);
       const homeRoot = process.env.HOME ?? homedir();
+      const normalizedQuery = query.trim().replace(/\\/g, "/");
+      const completesPath =
+        isAbsolute(normalizedQuery) || /^(?:~|\.\.?)(?:\/|$)/.test(normalizedQuery);
+      const pathQueryPolicy: PathQueryPolicy = searchesWorkspace ? "slashes" : "rooted";
+      const absoluteResults = !searchesWorkspace || (completesPath && matchMode !== "suffix");
       // readdir on TCC-protected folders under ~/Library blocks forever for a process that cannot
       // show a consent prompt, and each blocked call holds a libuv threadpool thread.
       const excludedDiscoveryPaths =
@@ -5231,8 +5237,8 @@ export class Session {
       const entries = await searchDirectoryEntries({
         root: workspaceCwd ? expandTilde(workspaceCwd) : homeRoot,
         query,
-        pathFormat: searchesWorkspace ? "relative" : "absolute",
-        pathQueryPolicy: searchesWorkspace ? "slashes" : "rooted",
+        pathFormat: absoluteResults ? "absolute" : "relative",
+        pathQueryPolicy: completesPath ? "complete" : pathQueryPolicy,
         blankQueryBehavior: searchesWorkspace ? "children" : "none",
         rootAliases: searchesWorkspace ? [] : ["~"],
         traversableHiddenDirectoryNames: searchesWorkspace

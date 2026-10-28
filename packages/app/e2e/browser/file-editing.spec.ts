@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import type { Locator } from "@playwright/test";
 import { expect, test, type Page } from "../support/fixtures";
@@ -14,6 +15,11 @@ import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-
 import { seedWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
+import {
+  composerLocator,
+  expectComposerDraft,
+  fillComposerDraft,
+} from "../support/helpers/composer";
 
 const APP_SETTINGS_KEY = "@paseo:app-settings";
 
@@ -123,6 +129,61 @@ async function seedAgentWithFileLink(input: LinkedFile) {
 }
 
 test.describe("CodeMirror workspace file editing", () => {
+  test("opens and completes external files through chat links and Explorer symlinks", async ({
+    page,
+  }) => {
+    const outside = await mkdtemp(path.join(tmpdir(), "paseo-external-files-"));
+    const externalFile = path.join(outside, "external.md");
+    await writeFile(externalFile, "# External file opened\n");
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "external-file-links-",
+      title: "External files",
+      initialPrompt: "Show the files",
+      featureValues: {
+        mockAssistantResponse: `Read \`workspace/external.md\`. [Absolute file](${externalFile}) [Missing file](${outside}/missing.md)`,
+      },
+    });
+    try {
+      await symlink(outside, path.join(session.cwd, "workspace"), "junction");
+      await openAgentRoute(page, session);
+      const homeRelative = path
+        .relative(process.env.HOME ?? homedir(), outside)
+        .split(path.sep)
+        .join("/");
+      for (const query of [`@${outside}/ext`, `@~/${homeRelative}/ext`]) {
+        await fillComposerDraft(page, query);
+        await expect(
+          page
+            .getByTestId("composer-autocomplete-popover")
+            .getByText(externalFile, { exact: true }),
+        ).toBeVisible();
+        await composerLocator(page).press("Enter");
+        await expectComposerDraft(page, `"${externalFile}"`);
+      }
+      await fillComposerDraft(page, "");
+
+      await openAssistantInlinePath(page, "workspace/external.md");
+      await expectPreviewText(page, "External file opened");
+      await returnToAssistant(page, session.agentId);
+      await openAssistantMarkdownLink(page, "Absolute file");
+      await expectPreviewText(page, "External file opened");
+
+      await returnToAssistant(page, session.agentId);
+      await openAssistantMarkdownLink(page, "Missing file");
+      await expect(page.getByText("File not found", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+
+      await openFileExplorer(page);
+      await expandFolder(page, "workspace");
+      await openFileFromExplorer(page, "external.md");
+      await expectPreviewText(page, "External file opened");
+      await page.screenshot({ path: test.info().outputPath("external-files.png") });
+    } finally {
+      await session.cleanup();
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   test("opens explicit screenshot links and explains missing files", async ({ page }) => {
     const session = await seedMockAgentWorkspace({
       repoPrefix: "screenshot-markdown-link-",

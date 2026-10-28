@@ -35,7 +35,7 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
     }
   });
 
-  it("rejects symlinked files that resolve outside the workspace", async () => {
+  it("reads symlinked files that resolve outside the workspace", async () => {
     const root = await createTempDir("paseo-file-explorer-");
     const outsideRoot = await createTempDir("paseo-file-explorer-outside-");
 
@@ -49,14 +49,14 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
           root,
           relativePath: "secret-link.txt",
         }),
-      ).rejects.toThrow("Access outside of workspace is not allowed");
+      ).resolves.toMatchObject({ path: "secret-link.txt", content: "top secret\n" });
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(outsideRoot, { recursive: true, force: true });
     }
   });
 
-  it("skips listed symlink entries that resolve outside the workspace", async () => {
+  it("lists and browses symlinked files and directories outside the workspace", async () => {
     const root = await createTempDir("paseo-file-explorer-");
     const outsideRoot = await createTempDir("paseo-file-explorer-outside-");
 
@@ -65,12 +65,21 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
       const externalFile = path.join(outsideRoot, "secret.txt");
       await writeFile(externalFile, "top secret\n", "utf-8");
       await symlink(externalFile, path.join(root, "secret-link.txt"));
+      await symlink(outsideRoot, path.join(root, "workspace"));
 
       const result = await listDirectoryEntries({ root });
 
       const names = result.entries.map((entry) => entry.name);
       expect(names).toContain("visible.txt");
-      expect(names).not.toContain("secret-link.txt");
+      expect(names).toContain("secret-link.txt");
+      expect(result.entries.find((entry) => entry.name === "workspace")).toMatchObject({
+        path: "workspace",
+        kind: "directory",
+      });
+      const linkedDirectory = await listDirectoryEntries({ root, relativePath: "workspace" });
+      expect(
+        linkedDirectory.entries.map((entry) => ({ path: entry.path, kind: entry.kind })),
+      ).toEqual([{ path: "workspace/secret.txt", kind: "file" }]);
     } finally {
       await rm(root, { recursive: true, force: true });
       await rm(outsideRoot, { recursive: true, force: true });

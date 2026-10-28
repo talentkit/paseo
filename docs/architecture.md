@@ -311,8 +311,12 @@ as failed rather than allowing an agent into a checkout whose setup did not fini
 `directory_suggestions_request` is one daemon-owned filesystem search capability. The daemon
 configures the same `searchDirectoryEntries` engine with a root, output format, path-query policy,
 entry-kind filters, match mode, blank-query behavior, and hidden-directory traversal policy. A
-request without `cwd` searches the host home for absolute project paths; a request with `cwd`
-searches that workspace and returns relative entries. Clients may prepend their small host-scoped
+bare request without `cwd` searches the host home for absolute project paths; a bare request with
+`cwd` searches that workspace and returns relative entries. Discovery follows directory symlinks,
+including targets outside the search root, and stops at previously visited canonical directories.
+Explicit `~/`, absolute, `./`, and `../` paths complete one directory at a time, including hidden
+and ignored entries. Completion returns absolute paths; suffix lookups retain relative output for
+workspace callers. Clients may prepend their small host-scoped
 recent-project list for bare queries, but must not parse filesystem query syntax or re-filter a
 correlated daemon response. The legacy `directories` response field remains a projection of the
 typed `entries` list.
