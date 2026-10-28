@@ -4,6 +4,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 import { runGitCommand } from "../../utils/run-git-command.js";
+import { isPathInsideRoot } from "../../utils/path.js";
 
 export type ExplorerEntryKind = "file" | "directory";
 export type ExplorerFileKind = "text" | "image" | "binary";
@@ -111,7 +112,6 @@ export const FILE_EXPLORER_STREAM_CHUNK_BYTES = 256 * 1024;
 export const MAX_EDITABLE_FILE_BYTES = 1024 * 1024;
 const READ_FILE_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
-const ACCESS_OUTSIDE_WORKSPACE_MESSAGE = "Access outside of workspace is not allowed";
 
 function fileRevision(stats: BigIntStats): string {
   return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}`;
@@ -150,7 +150,6 @@ interface EntryPayloadParams {
   root: string;
   targetPath: string;
   name: string;
-  kind: ExplorerEntryKind;
 }
 
 export async function listDirectoryEntries({
@@ -169,18 +168,16 @@ export async function listDirectoryEntries({
   const entriesWithNulls = await Promise.all(
     dirents.map(async (dirent) => {
       const targetPath = path.join(directoryPath.requestedPath, dirent.name);
-      const kind: ExplorerEntryKind = dirent.isDirectory() ? "directory" : "file";
       try {
         return await buildEntryPayload({
           root,
           targetPath,
           name: dirent.name,
-          kind,
         });
       } catch (error) {
         // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
         // Skip entries whose targets disappeared instead of failing the whole listing.
-        if (isMissingEntryError(error) || isOutsideWorkspaceError(error)) {
+        if (isMissingEntryError(error)) {
           return null;
         }
         throw error;
@@ -736,12 +733,14 @@ export async function renameExplorerEntry({
     if (sourcePath === renamedPath) {
       return { status: "ok", path: renamedPath };
     }
-    const repository = await runGitCommand(["rev-parse", "--is-inside-work-tree"], {
-      cwd: realRoot,
-      acceptExitCodes: [0, 128],
-    });
+    const repository = isPathInsideRoot(realRoot, source.resolvedPath)
+      ? await runGitCommand(["rev-parse", "--is-inside-work-tree"], {
+          cwd: realRoot,
+          acceptExitCodes: [0, 128],
+        })
+      : null;
     const tracked =
-      repository.exitCode === 0
+      repository?.exitCode === 0
         ? await runGitCommand(["ls-files", "-z", "--", `:(literal)${sourcePath}`], {
             cwd: realRoot,
             // Inherited literal mode disables the :(literal) pathspec magic.
@@ -828,23 +827,13 @@ async function resolveScopedPath({
 }: ScopedPathParams): Promise<ScopedPath> {
   const workspacePath = expandUserPath(root);
   const requestedPath = resolvePathFromBase(workspacePath, relativePath);
-  assertWithinWorkspace(workspacePath, requestedPath);
-  const canonicalRoot = await fs.realpath(workspacePath);
   try {
     const canonicalPath = await fs.realpath(requestedPath);
-    assertWithinWorkspace(canonicalRoot, canonicalPath);
     return { requestedPath, resolvedPath: canonicalPath };
   } catch (error) {
     if (isMissingEntryError(error)) return { requestedPath, resolvedPath: requestedPath };
     throw error;
   }
-}
-
-function assertWithinWorkspace(root: string, candidate: string): void {
-  const relative = path.relative(root, candidate);
-  const isOutsideWorkspace =
-    relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
-  if (isOutsideWorkspace) throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
 }
 
 async function openFileForRead(filePath: string): Promise<FileHandle> {
@@ -855,7 +844,6 @@ async function buildEntryPayload({
   root,
   targetPath,
   name,
-  kind,
 }: EntryPayloadParams): Promise<FileExplorerEntry> {
   const entryPath = await resolveScopedPath({
     root,
@@ -865,7 +853,7 @@ async function buildEntryPayload({
   return {
     name,
     path: normalizeRelativePath({ root, targetPath }),
-    kind,
+    kind: stats.isDirectory() ? "directory" : "file",
     size: stats.size,
     modifiedAt: stats.mtime.toISOString(),
   };
@@ -874,10 +862,6 @@ async function buildEntryPayload({
 function isMissingEntryError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
-}
-
-function isOutsideWorkspaceError(error: unknown): boolean {
-  return error instanceof Error && error.message === ACCESS_OUTSIDE_WORKSPACE_MESSAGE;
 }
 
 function normalizeRelativePath({ root, targetPath }: { root: string; targetPath: string }): string {

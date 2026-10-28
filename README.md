@@ -10,6 +10,7 @@ This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carri
 5. **Open folders as workspaces from the CLI.** `paseo .` waits for Desktop's host connection, opens an existing workspace for the folder or creates one, and reports failures in the app. Linux AppImage launches pass the required sandbox flag before Electron starts, and launch errors reach the terminal.
 6. **Linux Desktop taskbar identity.** Linux windows use the same window class as the application launcher, so the taskbar recognizes the app after startup.
 7. **OpenCode v2 Go usage.** The Usage card reads the active Go API key from OpenCode v2's database, including custom `OPENCODE_DB` locations. Refresh picks up account switches and key rotation. The v1 `auth.json` login remains supported, and neither credential store is modified.
+8. **Access files outside the project.** Explorer shows and follows external symlinks, including linked folders. Chat links, previews, editing and downloads can access files outside the workspace with the daemon user's filesystem permissions. Composer mentions complete `@~/...`, absolute paths and parent-relative paths one directory at a time, including hidden files. Project searches also follow external symlinks without looping through cycles.
 
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">

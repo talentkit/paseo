@@ -3,13 +3,13 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import pLimit from "p-limit";
 import { scorePathMatch, type MatchScore } from "@getpaseo/protocol/search/text-match";
-import { isPathInsideRoot } from "./path.js";
+import { expandTilde, isPathInsideRoot } from "./path.js";
 import { runGitCommand } from "./run-git-command.js";
 
 export type DirectorySuggestionKind = "file" | "directory";
 export type DirectorySuggestionPathFormat = "absolute" | "relative";
 export type DirectorySuggestionMatchMode = "fuzzy" | "suffix";
-export type PathQueryPolicy = "rooted" | "slashes";
+export type PathQueryPolicy = "rooted" | "slashes" | "complete";
 export type BlankQueryBehavior = "none" | "children";
 
 export interface DirectorySuggestionEntry {
@@ -179,11 +179,12 @@ const gitIgnoredPathsCache = new Map<string, GitIgnoredPathsCacheEntry>();
 // Discovery and retrieval filter differently, on purpose. Discovery — anything that ranks or
 // browses candidates the caller has not named — drops gitignored and hidden entries, so pickers
 // do not offer build output. Retrieval of a path the caller named exactly applies no ignore or
-// hidden filtering; the only question is whether the path stays inside the root. Clicking a file
-// reference an agent wrote must open it whether or not Git tracks it.
+// hidden filtering. Clicking a file reference an agent wrote must open it whether or not Git
+// tracks it, including files reached through symlinks outside the search root.
 export async function searchDirectoryEntries(
   options: SearchDirectoryEntriesOptions,
 ): Promise<DirectorySuggestionEntry[]> {
+  if (options.pathQueryPolicy === "complete") return completeDirectoryPath(options);
   const root = await resolveDirectory(options.root);
   if (!root) return [];
 
@@ -206,6 +207,47 @@ export async function searchDirectoryEntries(
   return exact
     ? [exact, ...results.filter((entry) => !sameEntry(entry, exact))].slice(0, input.limit)
     : results;
+}
+
+// Explicit host paths browse one directory at a time, including hidden and ignored entries.
+// Never fall back to a recursive host search while a typed parent is incomplete.
+async function completeDirectoryPath(
+  options: SearchDirectoryEntriesOptions,
+): Promise<DirectorySuggestionEntry[]> {
+  const query = options.query.trim().replace(/\\/g, "/");
+  const root = path.resolve(options.root);
+  const target = path.resolve(root, expandTilde(query));
+  const browsesDirectory = query.endsWith("/") || query === "~";
+  const parent = browsesDirectory ? target : path.dirname(target);
+  const prefix = browsesDirectory ? "" : path.basename(target).toLowerCase();
+  const includeFiles = options.includeFiles ?? false;
+  const includeDirectories = options.includeDirectories ?? true;
+  const limit = normalizeLimit(options.limit);
+  const entries: DirectorySuggestionEntry[] = [];
+
+  if (options.matchMode === "suffix") {
+    const kind = getEntryKind(await stat(target).catch(() => null));
+    const matchesFile = kind === "file" && includeFiles;
+    const matchesDirectory = kind === "directory" && includeDirectories;
+    if (kind && (matchesFile || matchesDirectory)) {
+      return [formatEntry({ path: target, kind }, root, options.pathFormat)];
+    }
+    return [];
+  }
+
+  for await (const entry of readChildren(parent)) {
+    if (!entry.name.toLowerCase().startsWith(prefix)) continue;
+    if (entry.kind === "file" && !includeFiles) continue;
+    if (entry.kind === "directory" && !includeDirectories) continue;
+    entries.push({ path: path.join(parent, entry.name), kind: entry.kind });
+  }
+
+  entries.sort((left, right) => {
+    if (left.path === target) return -1;
+    if (right.path === target) return 1;
+    return compareKinds(left.kind, right.kind) || left.path.localeCompare(right.path);
+  });
+  return entries.slice(0, limit).map((entry) => formatEntry(entry, root, options.pathFormat));
 }
 
 async function searchCandidates(input: SearchInput): Promise<RankedEntry[]> {
@@ -231,7 +273,7 @@ function resolvesTypedPath(input: SearchInput): boolean {
 async function resolveTypedParent(input: SearchInput): Promise<WalkStart | null> {
   const visiblePath = path.resolve(input.root, input.plan.parentPart);
   const resolvedPath = await realpath(visiblePath).catch(() => null);
-  if (!resolvedPath || !isPathInsideRoot(input.root, resolvedPath)) return null;
+  if (!resolvedPath) return null;
   const info = await stat(resolvedPath).catch(() => null);
   return info?.isDirectory() ? { visiblePath, resolvedPath } : null;
 }
@@ -285,9 +327,7 @@ async function findExactEntry(input: SearchInput): Promise<DirectorySuggestionEn
   if (!input.plan.normalizedQuery) return null;
   const visiblePath = path.resolve(input.root, input.plan.normalizedQuery);
   const resolvedPath = await realpath(visiblePath).catch(() => null);
-  if (!resolvedPath || !isPathInsideRoot(input.root, resolvedPath)) return null;
-  // No ignore filtering here: the caller named this exact path, so containment above is the
-  // only question left to answer. Filtering belongs to discovery, not retrieval.
+  if (!resolvedPath) return null;
   const info = await stat(resolvedPath).catch(() => null);
   const kind = getEntryKind(info);
   if (
@@ -319,7 +359,7 @@ interface SearchInput {
 async function searchChildren(input: SearchInput): Promise<RankedEntry[]> {
   const visibleParent = path.resolve(input.root, input.plan.parentPart || ".");
   const parent = await realpath(visibleParent).catch(() => null);
-  if (!parent || !isPathInsideRoot(input.root, parent)) return [];
+  if (!parent) return [];
   if (isGitIgnoredPath(parent, input)) return [];
   // Browsing inside an excluded path is explicit: the caller typed it, so list what is there.
   const discoveryInput = isInsideExcludedPath(parent, input)
@@ -327,8 +367,7 @@ async function searchChildren(input: SearchInput): Promise<RankedEntry[]> {
     : input;
   const ranked: RankedEntry[] = [];
   for await (const entry of readChildren(parent)) {
-    if (!isPathInsideRoot(input.root, entry.resolvedPath) || !shouldDiscover(entry, discoveryInput))
-      continue;
+    if (!shouldDiscover(entry, discoveryInput)) continue;
     const candidate: TraversedEntry = {
       ...entry,
       visiblePath: path.join(visibleParent, entry.name),
@@ -388,7 +427,7 @@ async function* walkChildren({
   visited,
 }: WalkChildrenOptions): AsyncGenerator<AsyncGenerator<TraversedEntry>> {
   for await (const child of readChildren(parent.resolvedPath)) {
-    if (!staysInsideRoot(child, input.root) || !shouldDiscover(child, input)) continue;
+    if (!shouldDiscover(child, input)) continue;
     yield walkBranch(
       { ...child, visiblePath: path.join(parent.visiblePath, child.name), depth },
       input,
@@ -411,12 +450,6 @@ async function* roundRobin<T>(branches: AsyncIterable<AsyncGenerator<T>>): Async
     if (!nextRound.length) return;
     active = nextRound;
   }
-}
-
-// Only a symlink can resolve outside the tree being walked. Every other child is its parent's
-// path plus a name, and the parent was already proved inside the root.
-function staysInsideRoot(entry: ChildEntry, root: string): boolean {
-  return !entry.viaSymlink || isPathInsideRoot(root, entry.resolvedPath);
 }
 
 function shouldDiscover(entry: ChildEntry, input: SearchInput): boolean {
@@ -454,6 +487,7 @@ function isInsideExcludedPath(absolutePath: string, input: SearchInput): boolean
 }
 
 function isGitIgnoredPath(absolutePath: string, input: SearchInput): boolean {
+  if (input.gitIgnoredPaths.size === 0) return false;
   let candidate = absolutePath;
   while (candidate !== input.root && isPathInsideRoot(input.root, candidate)) {
     if (input.gitIgnoredPaths.has(candidate)) return true;

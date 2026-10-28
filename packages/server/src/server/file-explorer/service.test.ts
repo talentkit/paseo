@@ -463,18 +463,21 @@ describe("file explorer service", () => {
     }
   });
 
-  it("rejects ~-prefixed paths that resolve outside the workspace", async () => {
+  it("reads ~-prefixed paths that resolve outside the workspace", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paseo-file-explorer-outside-home-"));
-
+    const outside = await createTempDir("paseo-external-file-");
     try {
+      const externalFile = path.join(outside, "file.txt");
+      await writeFile(externalFile, "external content\n");
       await expect(
         readExplorerFile({
           root,
-          relativePath: "~/some/file.txt",
+          relativePath: `~/${path.relative(os.homedir(), externalFile).split(path.sep).join("/")}`,
         }),
-      ).rejects.toThrow("Access outside of workspace is not allowed");
+      ).resolves.toMatchObject({ content: "external content\n" });
     } finally {
       await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 
@@ -778,7 +781,7 @@ describe("file explorer service", () => {
     }
   });
 
-  it("deletes files and directories but never the workspace root or outside paths", async () => {
+  it("deletes files and directories but refuses the workspace root and missing paths", async () => {
     const root = await createTempDir("paseo-entry-delete-");
     try {
       await writeFile(path.join(root, "doomed.txt"), "bye", "utf8");
