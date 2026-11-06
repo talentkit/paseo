@@ -174,6 +174,7 @@ interface RenderOptions {
   onClose?: () => void;
   onSubmit?: (value: string) => Promise<void> | void;
   validate?: (value: string) => string | null;
+  allowEmpty?: boolean;
   maxLength?: number;
 }
 
@@ -187,6 +188,7 @@ function renderModal(options: RenderOptions = {}): void {
     onClose = vi.fn(),
     onSubmit = vi.fn(),
     validate,
+    allowEmpty,
     maxLength,
   } = options;
   act(() => {
@@ -200,6 +202,7 @@ function renderModal(options: RenderOptions = {}): void {
         onClose={onClose}
         onSubmit={onSubmit}
         validate={validate}
+        allowEmpty={allowEmpty}
         maxLength={maxLength}
         testID="rename-modal"
       />,
@@ -250,6 +253,25 @@ async function flush(): Promise<void> {
 }
 
 describe("RenameModal", () => {
+  it("allows clearing an optional value when explicitly enabled", async () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    renderModal({
+      initialValue: "https://images.example.com/{username}.png",
+      allowEmpty: true,
+      onSubmit,
+      onClose,
+    });
+
+    typeInto("");
+    expect(querySubmit()?.disabled).toBe(false);
+    click(querySubmit());
+    await flush();
+
+    expect(onSubmit).toHaveBeenCalledWith("");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("renders with the initial value pre-filled and selects it after open", async () => {
     vi.useFakeTimers();
     renderModal({ initialValue: "main" });

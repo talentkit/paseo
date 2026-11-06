@@ -1,3 +1,4 @@
+import { resolveClientMessageId } from "../client-message-id.js";
 import { prepareAgentMessage, type AgentPromptSource } from "./agent-messages/index.js";
 import type { Logger } from "pino";
 
@@ -316,7 +317,11 @@ export async function sendPromptToAgent(
   params: SendPromptToAgentParams,
 ): Promise<{ disposition: PromptDispatchDisposition }> {
   const source = await resolvePromptSource(params.source, params.agentManager, params.agentStorage);
-  const delivery = prepareAgentMessage(params.prompt, source, params.messageId);
+  // Attributed prompts need a canonical row even when an older client omits its ID.
+  const messageId = params.runOptions?.author
+    ? resolveClientMessageId(params.messageId)
+    : params.messageId;
+  const delivery = prepareAgentMessage(params.prompt, source, messageId);
   return sendPreparedPromptToAgent({
     ...params,
     prompt: delivery.prompt,
@@ -386,7 +391,9 @@ export async function startCreatedAgentInitialPrompt(
   const delivery = prepareAgentMessage(
     params.prompt,
     await resolvePromptSource(params.source, params.agentManager, params.agentStorage),
-    params.runOptions?.clientMessageId,
+    params.runOptions?.author
+      ? resolveClientMessageId(params.runOptions.clientMessageId)
+      : params.runOptions?.clientMessageId,
   );
   const dispatchResult = await startAgentRun(
     params.agentManager,

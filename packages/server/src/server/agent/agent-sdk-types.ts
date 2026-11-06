@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type {
   AgentFeature,
   AgentFeatureSelect,
@@ -198,6 +199,8 @@ export type AgentPromptContentBlock =
 export type AgentPromptInput = string | AgentPromptContentBlock[];
 
 export interface AgentRunOptions {
+  /** Daemon-supplied attribution, never taken from the prompt or provider. */
+  author?: UserMessageAuthor;
   outputSchema?: unknown;
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;
@@ -399,7 +402,13 @@ export interface PluginTimelineItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      author?: UserMessageAuthor;
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

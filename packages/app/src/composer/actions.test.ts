@@ -192,6 +192,7 @@ function createFakeSendClient(
   const calls: FakeSendCall[] = [];
   return {
     calls,
+    getLastServerInfoMessage: () => null,
     sendAgentMessage: async (agentId, text, opts) => {
       const call = { agentId, text, options: opts };
       calls.push(call);
@@ -1056,6 +1057,7 @@ describe("file upload preparation", () => {
     const sent: string[] = [];
     const upload = uploadFileAttachments({
       client: {
+        getLastServerInfoMessage: () => null,
         sendAgentMessage: async () => {},
         uploadFile: async (file) => {
           sent.push(file.fileName);
@@ -1096,6 +1098,7 @@ describe("file upload preparation", () => {
       await expect(
         uploadFileAttachments({
           client: {
+            getLastServerInfoMessage: () => null,
             sendAgentMessage: async () => {},
             uploadFile: async () => {
               sends++;

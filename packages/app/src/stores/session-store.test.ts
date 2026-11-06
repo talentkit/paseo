@@ -93,6 +93,33 @@ function initializeTestSession(): void {
   useSessionStore.getState().initializeSession("test-server", null as unknown as DaemonClient);
 }
 
+it("keeps prompt authors current when a connection's identity or avatar changes", () => {
+  initializeTestSession();
+  const store = useSessionStore.getState();
+  const serverInfo = { serverId: "test-server", hostname: "test-host", version: "0.15.0" };
+  const author = { username: "panta", avatarUrl: "https://images.example.com/panta.png" };
+
+  store.updateSessionServerInfo("test-server", { ...serverInfo, userAuthor: author });
+  expect(useSessionStore.getState().sessions["test-server"].serverInfo?.userAuthor).toEqual(author);
+
+  const updatedAvatar = { ...author, avatarUrl: "https://images.example.com/new/panta.png" };
+  store.updateSessionServerInfo("test-server", { ...serverInfo, userAuthor: updatedAvatar });
+  expect(useSessionStore.getState().sessions["test-server"].serverInfo?.userAuthor).toEqual(
+    updatedAvatar,
+  );
+
+  store.updateSessionServerInfo("test-server", {
+    ...serverInfo,
+    userAuthor: { username: "ivana" },
+  });
+  expect(useSessionStore.getState().sessions["test-server"].serverInfo?.userAuthor).toEqual({
+    username: "ivana",
+  });
+
+  store.updateSessionServerInfo("test-server", serverInfo);
+  expect(useSessionStore.getState().sessions["test-server"].serverInfo?.userAuthor).toBeUndefined();
+});
+
 function getTestSessionReferences() {
   const state = useSessionStore.getState();
   const session = state.sessions["test-server"];

@@ -1,4 +1,5 @@
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page, type WebSocketRoute } from "@playwright/test";
+import { WebSocket } from "ws";
 import type { CreateAgentRequestMessage, SessionInboundMessage } from "@getpaseo/protocol/messages";
 import type { DaemonClient as InternalDaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
@@ -559,8 +560,36 @@ export interface AgentCreatedDelayControl {
   expectSingleWorkspaceIntent(): void;
 }
 
+function connectWithProxyHeaders(ws: WebSocketRoute, headers: Record<string, string>) {
+  // Chromium does not apply Playwright's extra HTTP headers to WebSocket upgrades.
+  const upstream = new WebSocket(ws.url(), { headers });
+  const pending: Array<string | Buffer> = [];
+  upstream.on("open", () => {
+    for (const message of pending.splice(0)) upstream.send(message);
+  });
+  ws.onClose(() => upstream.terminate());
+  upstream.on("close", () => ws.close());
+  upstream.on("error", () => ws.close({ code: 1011, reason: "Test proxy connection failed" }));
+  return {
+    send(message: string | Buffer) {
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(message);
+      else pending.push(message);
+    },
+    onMessage(callback: (message: string | Buffer) => void) {
+      upstream.on("message", (data, isBinary) => {
+        let buffer: Buffer;
+        if (Array.isArray(data)) buffer = Buffer.concat(data);
+        else if (data instanceof ArrayBuffer) buffer = Buffer.from(data);
+        else buffer = data;
+        callback(isBinary ? buffer : buffer.toString());
+      });
+    },
+  };
+}
+
 export async function delayBrowserAgentCreatedStatus(
   page: Page,
+  proxyHeaders?: Record<string, string>,
 ): Promise<AgentCreatedDelayControl> {
   const frames = await loadSessionMessageReaders();
   const daemonPortPattern = daemonWsRoutePattern();
@@ -578,7 +607,7 @@ export async function delayBrowserAgentCreatedStatus(
   });
 
   await page.routeWebSocket(daemonPortPattern, (ws) => {
-    const server = ws.connectToServer();
+    const server = proxyHeaders ? connectWithProxyHeaders(ws, proxyHeaders) : ws.connectToServer();
 
     ws.onMessage((message) => {
       const sessionMessage = frames.client(message);

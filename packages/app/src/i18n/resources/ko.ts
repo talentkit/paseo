@@ -2642,6 +2642,15 @@ export const ko: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "이니셜",
+        edit: "아바타 URL 패턴 편집",
+        title: "메시지 아바타",
+        url: "아바타 URL 패턴",
+        info: "HTTP 또는 HTTPS 이미지 URL에 {username}을 사용하세요. 비워 두면 이니셜이 표시됩니다.",
+        invalidUrl: "HTTP 또는 HTTPS URL을 입력하거나 이니셜을 표시하려면 비워 두세요.",
+        saved: "아바타 설정을 저장했습니다",
+      },
       password: {
         guidance: "이 호스트를 제거한 뒤 이 데몬이 요구하는 비밀번호로 다시 추가하세요.",
       },

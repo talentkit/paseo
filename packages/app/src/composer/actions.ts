@@ -1,3 +1,4 @@
+import type { ServerInfoStatusPayload } from "@getpaseo/protocol/messages";
 import type { SelectedFile } from "@/attachments/selected-file";
 import { FILE_UPLOAD_MAX_BYTES } from "@/attachments/upload-limit";
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
@@ -46,6 +47,7 @@ export interface AttachmentPersister {
 }
 
 export interface ComposerSendClient {
+  getLastServerInfoMessage: () => ServerInfoStatusPayload | null;
   sendAgentMessage: (
     agentId: string,
     text: string,
@@ -207,6 +209,7 @@ export async function dispatchComposerAgentMessage(
   });
   const clientMessageId = generateMessageId();
   const userMessage = createUserMessage({
+    author: input.client.getLastServerInfoMessage()?.userAuthor,
     clientMessageId,
     text: input.text,
     timestamp: new Date(),

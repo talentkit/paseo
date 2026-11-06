@@ -2652,6 +2652,16 @@ export const ja: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "イニシャル",
+        edit: "アバターURLのパターンを編集",
+        title: "メッセージのアバター",
+        url: "アバターURLのパターン",
+        info: "HTTPまたはHTTPSの画像URLに{username}を使用します。空欄にするとイニシャルを表示します。",
+        invalidUrl:
+          "HTTPまたはHTTPSのURLを入力するか、イニシャルを表示する場合は空欄にしてください。",
+        saved: "アバター設定を保存しました",
+      },
       password: {
         guidance:
           "このホストを削除し、このデーモンが求めるパスワードを入力して追加し直してください。",

@@ -35,6 +35,7 @@ function reloadableConfig(
     enableTerminalAgentHooks: daemon.enableTerminalAgentHooks ?? false,
     idleRuntimeCleanup: agents.idleRuntimeCleanup !== false,
     appendSystemPrompt: daemon.appendSystemPrompt ?? "",
+    userAvatarUrl: daemon.userAvatarUrl,
     terminalProfiles: daemon.terminalProfiles,
     agentProfiles: daemon.agentProfiles,
     cors: { allowedOrigins: [] },
@@ -1041,6 +1042,35 @@ describe("DaemonConfigStore reload", () => {
   function writeConfig(paseoHome: string, config: unknown): void {
     writeFileSync(path.join(paseoHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
   }
+
+  test("saves, validates, clears, and reloads the avatar URL without restarting", async () => {
+    const { store, paseoHome } = createReloadableStore();
+    const template = "https://images.example.com/{username}.png";
+    const changes: unknown[] = [];
+    store.onFieldChange("userAvatarUrl", (value) => changes.push(value));
+    await store.patch({ userAvatarUrl: template });
+    expect(store.get().userAvatarUrl).toBe(template);
+    expect(loadConfig(paseoHome, { env: {} }).userAvatarUrl).toBe(template);
+
+    await expect(store.patch({ userAvatarUrl: "javascript:alert(1)" })).rejects.toThrow();
+    expect(store.get().userAvatarUrl).toBe(template);
+    expect(loadPersistedConfig(paseoHome).daemon?.userAvatarUrl).toBe(template);
+
+    await store.patch({ userAvatarUrl: "" });
+    expect(loadConfig(paseoHome, { env: {} }).userAvatarUrl).toBe("");
+    const persisted = loadPersistedConfig(paseoHome);
+    writeConfig(paseoHome, {
+      ...persisted,
+      daemon: { ...persisted.daemon, userAvatarUrl: template },
+    });
+    expect(await store.reload()).toEqual({
+      appliedPaths: ["daemon.userAvatarUrl"],
+      restartRequiredPaths: [],
+      overrideControlledPaths: [],
+    });
+    expect(store.get().userAvatarUrl).toBe(template);
+    expect(changes).toEqual([template, "", template]);
+  });
 
   test("applies overlapping plugin mutations to the latest committed sources", async () => {
     const { store } = createReloadableStore({

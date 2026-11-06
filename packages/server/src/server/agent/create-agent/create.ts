@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
 import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
@@ -44,6 +45,7 @@ export type EnsureWorkspaceForCreate = (
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
+  author?: UserMessageAuthor;
   kind: "session";
   onAgentReady?: (agent: ManagedAgent) => Promise<void>;
   agentId?: string;
@@ -236,8 +238,9 @@ async function resolveSessionCreateAgent(
   const hasPromptContent = Array.isArray(prompt) ? prompt.length > 0 : prompt.length > 0;
   const clientMessageId = normalizeClientMessageId(input.clientMessageId);
   const runOptions: AgentRunOptions | undefined =
-    input.outputSchema || clientMessageId
+    input.outputSchema || clientMessageId || input.author
       ? {
+          ...(input.author ? { author: input.author } : {}),
           ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
           ...(clientMessageId ? { clientMessageId } : {}),
         }

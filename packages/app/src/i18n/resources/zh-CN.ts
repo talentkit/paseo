@@ -2601,6 +2601,15 @@ export const zhCN: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "姓名首字母",
+        edit: "编辑头像 URL 模板",
+        title: "消息头像",
+        url: "头像 URL 模板",
+        info: "在 HTTP 或 HTTPS 图片 URL 中使用 {username}。留空则显示姓名首字母。",
+        invalidUrl: "请输入 HTTP 或 HTTPS URL，或留空以显示姓名首字母。",
+        saved: "头像设置已保存",
+      },
       password: {
         guidance: "移除此主机，然后使用此守护进程要求的密码重新添加。",
       },

@@ -14,6 +14,19 @@ const isUserMessageItem = (item?: StreamItem | null) => item?.kind === "user_mes
 const isToolSequenceItem = (item?: StreamItem | null) =>
   item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 
+export function continuesUserMessageGroup(
+  item: StreamItem | null,
+  nextItem: StreamItem | null,
+): boolean {
+  if (item?.kind !== "user_message" || nextItem?.kind !== "user_message") {
+    return false;
+  }
+  if (item.sender || nextItem.sender) {
+    return false;
+  }
+  return item.author !== undefined && item.author.username === nextItem.author?.username;
+}
+
 export function getGapBetweenStreamItems(
   item: StreamItem | null,
   belowItem: StreamItem | null,
@@ -23,7 +36,7 @@ export function getGapBetweenStreamItems(
   }
 
   if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
-    return SPACING[1];
+    return continuesUserMessageGroup(item, belowItem) ? SPACING[2] : SPACING[4];
   }
   if (item.kind === "user_message" && belowItem.kind === "assistant_message") {
     return 0;

@@ -148,6 +148,61 @@ function findLayoutItem(layout: StreamLayout, id: string): StreamLayoutItem {
 }
 
 describe("layoutStream", () => {
+  it.each(["web", "android"] as const)(
+    "groups only consecutive prompts from the same known author on %s",
+    (platform) => {
+      const first = { ...userMessage("panta-first", 1), author: { username: "panta" } };
+      const continuation = { ...userMessage("panta-second", 2), author: { username: "panta" } };
+      const anonymous = userMessage("anonymous", 3);
+      const otherAnonymous = userMessage("other-anonymous", 4);
+      const returning = { ...userMessage("panta-returning", 5), author: { username: "panta" } };
+      const otherAuthor = { ...userMessage("ivana", 6), author: { username: "ivana" } };
+      const layout = layoutFor({
+        platform,
+        tail: [first],
+        head: [continuation, anonymous, otherAnonymous, returning, otherAuthor],
+      });
+
+      expect(findLayoutItem(layout, first.id)).toMatchObject({
+        isFirstInUserGroup: true,
+        isLastInUserGroup: false,
+        gapBelow: 8,
+      });
+      expect(findLayoutItem(layout, continuation.id)).toMatchObject({
+        isFirstInUserGroup: false,
+        isLastInUserGroup: true,
+        gapBelow: 16,
+      });
+      for (const item of [anonymous, otherAnonymous, returning, otherAuthor]) {
+        expect(findLayoutItem(layout, item.id)).toMatchObject({
+          isFirstInUserGroup: true,
+          isLastInUserGroup: true,
+        });
+      }
+    },
+  );
+
+  it("updates cached history grouping when a live prompt gains an author", () => {
+    const first = { ...userMessage("panta-first", 1), author: { username: "panta" } };
+    const history = [first];
+    const liveHead: StreamItem[] = [userMessage("pending", 2)];
+    const timingByItemId = new Map<string, TurnTiming>();
+    const input = {
+      strategy: strategyFor("web"),
+      isTurnActive: true,
+      history,
+      liveHead,
+      timingByItemId,
+    };
+    const before = layoutStream(input);
+    liveHead[0] = { ...userMessage("pending", 2), author: { username: "panta" } };
+    const after = layoutStream(input);
+
+    expect(findLayoutItem(before, first.id).isLastInUserGroup).toBe(true);
+    expect(findLayoutItem(after, first.id).isLastInUserGroup).toBe(false);
+    expect(findLayoutItem(after, "pending").isFirstInUserGroup).toBe(false);
+  });
+
   it("keeps separate footers for an assistant turn and an adjacent tool-only turn", () => {
     const priorAssistant = assistantMessage("prior", 1, undefined, "turn-1");
     const nextTool = toolCall("next-tool", 2, "turn-2");

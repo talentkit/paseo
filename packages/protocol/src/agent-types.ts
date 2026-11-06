@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "./user-message-author.js";
 import type { AgentMessage } from "./agent-message.js";
 import type { AgentAttachment } from "./messages.js";
 
@@ -374,7 +375,13 @@ export interface AgentTaskItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      author?: UserMessageAuthor;
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

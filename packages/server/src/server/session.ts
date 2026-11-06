@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -457,6 +458,7 @@ const nodeSessionFileSystem: SessionFileSystem = {
 type AgentMcpTransportFactory = () => Promise<unknown>;
 
 export interface SessionOptions {
+  userAuthor?: UserMessageAuthor;
   connectedHosts?: ConnectedHosts;
   sourceId?: string;
   routed?: boolean;
@@ -708,6 +710,9 @@ export class Session {
   getHostSourceId(): string {
     return this.hostSourceId;
   }
+  getUserAuthor(): UserMessageAuthor | undefined {
+    return this.userAuthor;
+  }
   private hostSourceId: string;
   setHostSource(sourceId: string): void {
     this.hostSourceId = sourceId;
@@ -740,6 +745,7 @@ export class Session {
   );
   private readonly browserToolsBroker: SessionOptions["browserToolsBroker"];
   private readonly clientId: string;
+  private readonly userAuthor: UserMessageAuthor | undefined;
   private readonly authorization: SessionAuthorization;
   private appVersion: string | null;
   private clientCapabilities: ReadonlySet<ClientCapability>;
@@ -856,6 +862,7 @@ export class Session {
   >();
 
   constructor(options: SessionOptions) {
+    this.userAuthor = options.userAuthor;
     const {
       clientId,
       permissions,
@@ -4096,7 +4103,7 @@ export class Session {
         agentId,
         prompt,
         messageId,
-        runOptions,
+        runOptions: { ...runOptions, author: this.userAuthor },
         // A typed or spoken message from the human answers any permission the
         // agent is blocked on.
         clearPendingPermissions: true,
@@ -4552,6 +4559,7 @@ export class Session {
         },
         {
           kind: "session",
+          author: msg.callerAgentId ? undefined : this.userAuthor,
           onAgentReady: async (agent) => {
             createdAgentId = agent.id;
             await onAgentReady?.(await this.buildAgentPayload(agent));
@@ -8438,6 +8446,7 @@ export class Session {
           agentId,
           prompt,
           messageId: msg.messageId,
+          runOptions: { author: this.userAuthor },
           activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt",
           sessionMode: msg.sessionMode,
           clearPendingPermissions: true,

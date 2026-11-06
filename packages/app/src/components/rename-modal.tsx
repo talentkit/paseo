@@ -16,10 +16,12 @@ export interface AdaptiveRenameModalProps {
   title: string;
   initialValue: string;
   placeholder?: string;
+  hint?: string;
   submitLabel?: string;
   onClose: () => void;
   onSubmit: (value: string) => Promise<void> | void;
   validate?: (value: string) => string | null;
+  allowEmpty?: boolean;
   maxLength?: number;
   testID?: string;
 }
@@ -29,10 +31,12 @@ export function AdaptiveRenameModal({
   title,
   initialValue,
   placeholder,
+  hint,
   submitLabel,
   onClose,
   onSubmit,
   validate,
+  allowEmpty = false,
   maxLength,
   testID,
 }: AdaptiveRenameModalProps) {
@@ -67,10 +71,10 @@ export function AdaptiveRenameModal({
 
   const computeError = useCallback(
     (value: string): string | null => {
-      if (!value.trim()) return t("common.errors.nameRequired");
+      if (!allowEmpty && !value.trim()) return t("common.errors.nameRequired");
       return validate ? validate(value) : null;
     },
-    [validate, t],
+    [allowEmpty, validate, t],
   );
 
   const handleChange = useCallback((value: string) => {
@@ -137,6 +141,7 @@ export function AdaptiveRenameModal({
           style={styles.input}
           testID={inputTestID}
         />
+        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
         {error ? (
           <Text style={styles.errorText} testID={errorTestID}>
             {error}
@@ -183,6 +188,10 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: 1,
     borderColor: theme.colors.border,
     fontSize: theme.fontSize.base,
+  },
+  hint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
   },
   errorText: {
     color: theme.colors.palette.red[300],

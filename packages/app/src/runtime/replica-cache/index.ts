@@ -1,3 +1,4 @@
+import { UserMessageAuthorSchema } from "@getpaseo/protocol/user-message-author";
 import { findMountedWindowStart } from "@/agent-stream/history-window";
 import { z } from "zod";
 import {
@@ -117,6 +118,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     ...TimelineItemBaseShape,
     kind: z.literal("user_message"),
+    author: UserMessageAuthorSchema.optional(),
     clientMessageId: z.string().optional(),
     messageId: z.string().optional(),
     text: z.string(),
@@ -449,6 +451,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
     case "user_message":
       return {
         ...base,
+        ...(item.author ? { author: item.author } : {}),
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
@@ -539,6 +542,7 @@ function deserializeBuiltinTimelineItem(
     case "user_message":
       return {
         ...base,
+        ...(item.author ? { author: item.author } : {}),
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),

@@ -56,45 +56,50 @@ function fakeWorktreeCreator(args: { repoRoot: string; createdWorkspaceId: strin
     }) as unknown as CreatePaseoWorktreeWorkflowResult;
 }
 
-test("session create forwards clientMessageId to the initial prompt run options", async () => {
-  const snapshot = {
-    id: "agent-1",
-    provider: "codex",
-    cwd: "/tmp/paseo-create-test",
-    runtimeInfo: null,
-  } as ManagedAgent;
-  const streamAgent = vi.fn(() => (async function* noop() {})());
-  const dependencies: Parameters<typeof createAgentCommand>[0] = {
-    agentManager: {
-      createAgent: vi.fn(async () => snapshot),
-      getAgent: vi.fn(() => snapshot),
-      tryRunOutOfBand: vi.fn(() => false),
-      hasInFlightRun: vi.fn(() => false),
-      reloadStalePluginSession: async () => {},
-      streamAgent,
-      waitForAgentRunStart: vi.fn(async () => undefined),
-    } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
-    agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
-    logger: createTestLogger(),
-    providerSnapshotManager: createProviderSnapshotManagerStub().manager,
-    workspaceSetupReadiness: readyWorkspaceSetup,
-  };
+test.each(["msg-create-1", undefined])(
+  "session create attributes the initial prompt with clientMessageId %s",
+  async (clientMessageId) => {
+    const snapshot = {
+      id: "agent-1",
+      provider: "codex",
+      cwd: "/tmp/paseo-create-test",
+      runtimeInfo: null,
+    } as ManagedAgent;
+    const streamAgent = vi.fn(() => (async function* noop() {})());
+    const dependencies: Parameters<typeof createAgentCommand>[0] = {
+      agentManager: {
+        createAgent: vi.fn(async () => snapshot),
+        getAgent: vi.fn(() => snapshot),
+        tryRunOutOfBand: vi.fn(() => false),
+        hasInFlightRun: vi.fn(() => false),
+        reloadStalePluginSession: async () => {},
+        streamAgent,
+        waitForAgentRunStart: vi.fn(async () => undefined),
+      } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+      agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
+      logger: createTestLogger(),
+      providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+      workspaceSetupReadiness: readyWorkspaceSetup,
+    };
 
-  await createAgentCommand(dependencies, {
-    kind: "session",
-    config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
-    workspaceId: "ws-create-test",
-    initialPrompt: "hello from create",
-    clientMessageId: "msg-create-1",
-    labels: {},
-    provisionalTitle: null,
-    firstAgentContext: { attachments: [] },
-  });
+    await createAgentCommand(dependencies, {
+      kind: "session",
+      config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+      workspaceId: "ws-create-test",
+      initialPrompt: "hello from create",
+      clientMessageId,
+      author: { username: "panta" },
+      labels: {},
+      provisionalTitle: null,
+      firstAgentContext: { attachments: [] },
+    });
 
-  expect(streamAgent).toHaveBeenCalledWith("agent-1", "hello from create", {
-    clientMessageId: "msg-create-1",
-  });
-});
+    expect(streamAgent).toHaveBeenCalledWith("agent-1", "hello from create", {
+      clientMessageId: clientMessageId ?? expect.any(String),
+      author: { username: "panta" },
+    });
+  },
+);
 
 test("session create returns the agent while workspace setup is still pending", async () => {
   const snapshot = {

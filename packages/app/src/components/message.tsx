@@ -1,3 +1,5 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
+import { HumanMessageAuthorName, HumanMessageAvatar } from "@/components/user-message/author";
 import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
@@ -91,6 +93,7 @@ export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
 interface UserMessageProps {
+  author?: UserMessageAuthor;
   sender?: AgentMessage["sender"];
   serverId?: string;
   agentId?: string;
@@ -297,6 +300,14 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     justifyContent: "flex-end",
     ...(isWeb ? { userSelect: "text" as const } : {}),
   },
+  humanContainer: {
+    paddingRight: theme.spacing[8] + theme.spacing[2],
+  },
+  avatarPosition: {
+    position: "absolute",
+    top: theme.spacing[0.5],
+    right: 0,
+  },
   content: {
     alignItems: "flex-end",
     maxWidth: "100%",
@@ -390,6 +401,7 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
 
 export const UserMessage = memo(function UserMessage({
+  author,
   sender,
   serverId,
   agentId,
@@ -415,6 +427,7 @@ export const UserMessage = memo(function UserMessage({
     [lightboxMetadata],
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const visibleAuthor = isFirstInGroup ? author : undefined;
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
@@ -438,13 +451,14 @@ export const UserMessage = memo(function UserMessage({
   const containerStyle = useMemo(
     () => [
       userMessageStylesheet.container,
+      !sender && userMessageStylesheet.humanContainer,
       !resolvedDisableOuterSpacing && [
         isFirstInGroup ? userMessageStylesheet.containerFirstInGroup : null,
         isLastInGroup ? userMessageStylesheet.containerLastInGroup : null,
         !isFirstInGroup || !isLastInGroup ? userMessageStylesheet.containerSpacing : null,
       ],
     ],
-    [resolvedDisableOuterSpacing, isFirstInGroup, isLastInGroup],
+    [resolvedDisableOuterSpacing, isFirstInGroup, isLastInGroup, sender],
   );
   const imagePreviewContainerStyle = useMemo(
     () => [
@@ -478,7 +492,8 @@ export const UserMessage = memo(function UserMessage({
         onPointerLeave={handlePointerLeave}
       >
         {sender ? <MessageSender sender={sender} serverId={serverId} /> : null}
-        <View style={userMessageStylesheet.bubble}>
+        <View style={userMessageStylesheet.bubble} testID="user-message-bubble">
+          <HumanMessageAuthorName author={visibleAuthor} />
           <MessagePreview>
             {hasImages ? (
               <View style={imagePreviewContainerStyle}>
@@ -542,6 +557,11 @@ export const UserMessage = memo(function UserMessage({
           </View>
         ) : null}
       </View>
+      {visibleAuthor ? (
+        <View style={userMessageStylesheet.avatarPosition}>
+          <HumanMessageAvatar author={visibleAuthor} />
+        </View>
+      ) : null}
       <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
     </View>
   );

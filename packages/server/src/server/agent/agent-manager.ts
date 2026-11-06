@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
@@ -418,6 +419,7 @@ interface HandleStreamEventOptions {
 }
 
 interface ManagedAgentBase {
+  userMessageAuthors?: Record<string, UserMessageAuthor>;
   id: string;
   provider: AgentProvider;
   cwd: string;
@@ -2194,6 +2196,7 @@ export class AgentManager {
         attention,
         internal: record.internal,
         labels: record.labels,
+        userMessageAuthors: record.userMessageAuthors,
       },
     });
   }
@@ -2661,7 +2664,9 @@ export class AgentManager {
     }
     this.touchUpdatedAt(agent);
     if (options?.clientMessageId) {
-      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
+      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted", {
+        author: options.author,
+      });
       this.emitState(agent);
     }
     const dispatch = (event: AgentStreamEvent): void => {
@@ -2764,6 +2769,7 @@ export class AgentManager {
         // A terminal rejection belongs after the submitted prompt even though no provider turn exists.
         if (options?.clientMessageId) {
           this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "rejected", {
+            author: options.author,
             messageId: options.clientMessageId,
           });
         }
@@ -2876,6 +2882,7 @@ export class AgentManager {
         : undefined;
       if (options?.clientMessageId) {
         this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted", {
+          author: options.author,
           messageId: options.clientMessageId,
           turnId,
           providerMessageId:
@@ -3051,6 +3058,7 @@ export class AgentManager {
           options?.clientMessageId,
           expectedTurnId,
           admission.providerMessageId,
+          options?.author,
         );
       }
       return admission;
@@ -3090,6 +3098,7 @@ export class AgentManager {
               options?.clientMessageId,
               expectedTurnId,
               admission.providerMessageId,
+              options?.author,
             );
           }
           return admission;
@@ -3196,12 +3205,14 @@ export class AgentManager {
     clientMessageId: string | undefined,
     expectedTurnId: string,
     providerMessageId: string | undefined,
+    author?: UserMessageAuthor,
   ): Promise<void> {
     if (!clientMessageId) {
       return;
     }
     this.recordSubmittedPrompt(agent, prompt, clientMessageId, "accepted", {
       messageId: clientMessageId,
+      author,
       turnId: expectedTurnId,
       ...(providerMessageId ? { providerMessageId } : {}),
     });
@@ -3866,6 +3877,8 @@ export class AgentManager {
         durableTimelineHasRows,
         options,
       });
+
+      managed.userMessageAuthors = (await this.registry?.get(resolvedAgentId))?.userMessageAuthors;
 
       // Read history before publishing the agent: a provider failure must leave the
       // session unregistered so the registration catch closes it.
@@ -5045,7 +5058,7 @@ export class AgentManager {
     const row = this.recordTimeline(agentId, item, { ...options, turnId });
     const event: AgentStreamEvent = {
       type: "timeline",
-      item,
+      item: row.item,
       provider,
       ...(turnId !== undefined ? { turnId } : {}),
     };
@@ -5075,11 +5088,17 @@ export class AgentManager {
     prompt: AgentPromptInput,
     clientMessageId: string,
     outcome: "accepted" | "rejected",
-    options?: { messageId?: string; providerMessageId?: string; turnId?: string },
+    options?: {
+      messageId?: string;
+      providerMessageId?: string;
+      turnId?: string;
+      author?: UserMessageAuthor;
+    },
   ): void {
     const items = projectAgentMessages({
       type: "user_message",
       text: submittedPromptText(prompt),
+      ...(options?.author ? { author: options.author } : {}),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
     });
@@ -5102,7 +5121,10 @@ export class AgentManager {
     )
       return;
     this.touchUpdatedAt(agent);
-    if (item.type === "user_message") agent.lastUserMessageAt = new Date();
+    if (item.type === "user_message") {
+      agent.lastUserMessageAt = new Date();
+      this.rememberUserMessageAuthor(agent, item, options?.providerMessageId);
+    }
     this.recordAndDispatchTimelineItem(agent.id, item, agent.provider, options?.turnId, options);
   }
 
@@ -5127,6 +5149,7 @@ export class AgentManager {
     }
     if (!existing || existing.item.type !== "user_message") return null;
     if (messageId) {
+      this.rememberUserMessageAuthor(agent, existing.item, messageId);
       const enriched = this.timelineStore.enrichSubmittedUserMessage(
         agent.id,
         clientMessageId,
@@ -5191,6 +5214,25 @@ export class AgentManager {
     return parts.join("\n\n");
   }
 
+  private rememberUserMessageAuthor(
+    agent: ManagedAgent,
+    item: Extract<AgentTimelineItem, { type: "user_message" }>,
+    providerMessageId?: string,
+  ): void {
+    const author = item.author;
+    if (!author) return;
+    const keys = [
+      ...(item.clientMessageId ? [`client:${item.clientMessageId}`] : []),
+      ...(providerMessageId ? [`provider:${providerMessageId}`] : []),
+    ];
+    if (keys.every((key) => agent.userMessageAuthors?.[key]?.username === author.username)) return;
+    agent.userMessageAuthors = {
+      ...agent.userMessageAuthors,
+      ...Object.fromEntries(keys.map((key) => [key, { username: author.username }])),
+    };
+    this.enqueueBackgroundPersist(agent);
+  }
+
   private recordTimeline(
     agentId: string,
     item: AgentTimelineItem,
@@ -5200,6 +5242,15 @@ export class AgentManager {
       turnId?: string;
     },
   ): AgentTimelineRow {
+    // Providers own durable conversation history; retain attribution in Paseo's agent record.
+    // Match saved identities only, never repeated prompt text or the currently connected user.
+    if (item.type === "user_message" && !item.author) {
+      const authors = this.agents.get(agentId)?.userMessageAuthors;
+      const author =
+        (item.clientMessageId ? authors?.[`client:${item.clientMessageId}`] : undefined) ??
+        (item.messageId ? authors?.[`provider:${item.messageId}`] : undefined);
+      if (author) item = { ...item, author };
+    }
     item = limitAgentTimelineItemContent(item);
     const row = this.timelineStore.append(agentId, item, options);
     this.enqueueDurableTimelineAppend(agentId, row);

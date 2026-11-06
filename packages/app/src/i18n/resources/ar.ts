@@ -2666,6 +2666,15 @@ export const ar: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "الأحرف الأولى",
+        edit: "تعديل نمط رابط الصورة",
+        title: "صور مرسلي الرسائل",
+        url: "نمط رابط الصورة",
+        info: "استخدم {username} في رابط صورة HTTP أو HTTPS. اتركه فارغًا لعرض الأحرف الأولى.",
+        invalidUrl: "أدخل رابط HTTP أو HTTPS، أو اتركه فارغًا لعرض الأحرف الأولى.",
+        saved: "تم حفظ إعدادات الصور",
+      },
       password: {
         guidance: "أزل هذا المضيف ثم أضفه مرة أخرى بكلمة المرور التي يطلبها هذا الخادم.",
       },

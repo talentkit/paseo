@@ -47,6 +47,60 @@ async function expectWebSocketCloses(params: {
 }
 
 describe("daemon bearer auth", () => {
+  test("proxy authors do not require new client requests or survive an account change", async () => {
+    const daemonHandle = await createTestPaseoDaemon({
+      userIdentityProxySecret: "internal-secret",
+      userAvatarUrl: "https://images.example.com/{username}.png",
+    });
+    async function readAuthor(headers: Record<string, string>): Promise<unknown> {
+      const ws = new WebSocket(`ws://127.0.0.1:${daemonHandle.port}/ws`, { headers });
+      const response = new Promise<unknown>((resolve, reject) => {
+        ws.once("message", (data) => resolve(JSON.parse(data.toString())));
+        ws.once("error", reject);
+        ws.once("open", () =>
+          ws.send(
+            JSON.stringify({
+              type: "hello",
+              clientId: "same-mobile-client",
+              clientType: "mobile",
+              protocolVersion: 1,
+            }),
+          ),
+        );
+      });
+      try {
+        return await response;
+      } finally {
+        ws.close();
+      }
+    }
+    try {
+      await expect(
+        readAuthor({ "X-Paseo-User": "panta", "X-Paseo-Proxy-Secret": "internal-secret" }),
+      ).resolves.toMatchObject({
+        message: {
+          payload: {
+            userAuthor: { username: "panta", avatarUrl: "https://images.example.com/panta.png" },
+          },
+        },
+      });
+      await expect(
+        readAuthor({ "X-Paseo-User": "ivana", "X-Paseo-Proxy-Secret": "internal-secret" }),
+      ).resolves.toMatchObject({
+        message: {
+          payload: {
+            userAuthor: { username: "ivana", avatarUrl: "https://images.example.com/ivana.png" },
+          },
+        },
+      });
+      expect(await readAuthor({ "X-Paseo-User": "forged" })).not.toHaveProperty(
+        "message.payload.userAuthor",
+      );
+    } finally {
+      await daemonHandle.close();
+    }
+  });
+
   beforeEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();

@@ -2754,6 +2754,15 @@ export const en = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "Initials",
+        edit: "Edit avatar URL pattern",
+        title: "Prompt avatars",
+        url: "Avatar URL pattern",
+        info: "Use {username} in an HTTP or HTTPS image URL. Leave empty to show initials.",
+        invalidUrl: "Enter an HTTP or HTTPS URL, or leave empty for initials.",
+        saved: "Avatar settings saved",
+      },
       password: {
         guidance: "Remove this host and add it again with the password this daemon asks for.",
       },

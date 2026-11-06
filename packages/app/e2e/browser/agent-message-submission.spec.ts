@@ -1,4 +1,8 @@
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
 import type { Locator, Page } from "@playwright/test";
+import { createServer } from "node:http";
+import { promisify } from "node:util";
 import { expect, test as baseTest } from "../support/fixtures";
 import {
   awaitToolCall,
@@ -37,6 +41,7 @@ import { WORKSPACE_DECK_MAX_MOUNTED_WORKSPACES } from "@/screens/workspace/works
 import { delayBrowserAgentCreatedStatus } from "../support/helpers/new-workspace";
 import { installDaemonWebSocketGate } from "../support/helpers/daemon-websocket-gate";
 import { gotoAppShell, openSettings, selectModel } from "../support/helpers/app";
+import { openSettingsHostSection } from "../support/helpers/settings";
 import { observeTimelineSubscriptions } from "../support/helpers/timeline-delivery";
 import { rememberTimelineRequestCounts } from "../support/helpers/timeline-resume";
 import {
@@ -72,6 +77,230 @@ const IMAGE = {
     "base64",
   ),
 };
+
+const authorTest = baseTest.extend<{}, { authorImageOrigin: string }>({
+  authorImageOrigin: [
+    async ({ e2eForkProviders }, provide) => {
+      void e2eForkProviders;
+      const server = createServer((request, response) => {
+        if (request.url !== "/panta.png") {
+          response.writeHead(404).end();
+          return;
+        }
+        response.writeHead(200, { "Content-Type": "image/png" }).end(IMAGE.buffer);
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Image server has no port");
+      try {
+        await provide(`http://127.0.0.1:${address.port}`);
+      } finally {
+        await promisify(server.close.bind(server))();
+      }
+    },
+    { scope: "worker" },
+  ],
+  e2eDaemonEnvironment: [
+    { PASEO_USER_IDENTITY_PROXY_SECRET: "e2e-proxy-secret" },
+    { scope: "worker" },
+  ],
+});
+
+authorTest(
+  "shows the author while the initial prompt is still being created",
+  async ({ page }, testInfo) => {
+    const agentCreatedDelay = await delayBrowserAgentCreatedStatus(page, {
+      "X-Paseo-User": "panta",
+      "X-Paseo-Proxy-Secret": "e2e-proxy-secret",
+    });
+    const workspace = await seedWorkspace({ repoPrefix: "prompt-author-create-" });
+    try {
+      await openWorkspaceDraft(page, workspace.workspaceId);
+      await selectModel(page, "one-minute-stream");
+      const prompt = "Show my name while this first prompt is pending.";
+      await submitMessage(page, prompt);
+      await agentCreatedDelay.waitForDelayedCreatedStatus();
+      const message = page.getByTestId("user-message").filter({ hasText: prompt });
+      await expect(message.getByTestId("user-message-author")).toHaveText("panta");
+      await expect(message.getByTestId("user-message-avatar-frame")).toHaveText("PA");
+      await page.screenshot({ path: testInfo.outputPath("initial-prompt-author.png") });
+      agentCreatedDelay.release();
+      await expect(page.getByTestId(/^workspace-tab-agent_/).first()).toBeVisible();
+      await expect(message.getByTestId("user-message-author")).toHaveText("panta");
+    } finally {
+      agentCreatedDelay.release();
+      await workspace.cleanup();
+    }
+  },
+);
+
+authorTest(
+  "prompt author attribution survives history and missing images",
+  async ({ page, authorImageOrigin }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 1100 });
+    const workspace = await seedWorkspace({ repoPrefix: `prompt-author-${testInfo.workerIndex}-` });
+    const panta = await connectDaemonClient<DaemonClient>({
+      clientIdPrefix: "author-panta",
+      headers: { "X-Paseo-User": "panta", "X-Paseo-Proxy-Secret": "e2e-proxy-secret" },
+    });
+    const ivana = await connectDaemonClient<DaemonClient>({
+      clientIdPrefix: "author-ivana",
+      headers: { "X-Paseo-User": "ivana", "X-Paseo-Proxy-Secret": "e2e-proxy-secret" },
+    });
+    try {
+      expect(panta.getLastServerInfoMessage()).toMatchObject({ userAuthor: { username: "panta" } });
+      await gotoAppShell(page);
+      await openSettings(page);
+      await openSettingsHostSection(page, getServerId(), "host");
+      const avatarValue = page.getByTestId("host-user-avatar-value");
+      const editAvatar = page.getByTestId("host-user-avatar-edit");
+      const avatarModal = page.getByTestId("host-user-avatar-modal");
+      const avatarUrl = page.getByTestId("host-user-avatar-modal-input");
+      const saveAvatar = page.getByTestId("host-user-avatar-modal-submit");
+      const cancelAvatar = page.getByTestId("host-user-avatar-modal-cancel");
+      await expect(avatarValue).toHaveText("Initials");
+      await expect(avatarUrl).toHaveCount(0);
+      await editAvatar.click();
+      await expect(avatarUrl).toHaveValue("");
+      await expect(saveAvatar).toBeDisabled();
+      await avatarUrl.fill("javascript:alert(1)");
+      await avatarUrl.press("Enter");
+      await expect(
+        page.getByText("Enter an HTTP or HTTPS URL, or leave empty for initials."),
+      ).toBeVisible();
+      await expect(saveAvatar).toBeDisabled();
+      await avatarUrl.fill(`${authorImageOrigin}/{username}.png`);
+      await saveAvatar.click();
+      await expect(page.getByText("Avatar settings saved", { exact: true })).toBeVisible();
+      await expect(avatarModal).toHaveCount(0);
+      await expect(avatarValue).toHaveText(`${authorImageOrigin}/{username}.png`);
+      await expect
+        .poll(async () => (await panta.getDaemonConfig()).config.userAvatarUrl)
+        .toBe(`${authorImageOrigin}/{username}.png`);
+      await page.screenshot({ path: testInfo.outputPath("avatar-settings-wide.png") });
+      await page.reload();
+      await expect(avatarValue).toHaveText(`${authorImageOrigin}/{username}.png`);
+      await editAvatar.click();
+      await expect(avatarUrl).toHaveValue(`${authorImageOrigin}/{username}.png`);
+      await avatarUrl.fill("https://images.example.com/cancelled/{username}.png");
+      await cancelAvatar.click();
+      await expect(avatarValue).toHaveText(`${authorImageOrigin}/{username}.png`);
+      await editAvatar.click();
+      await expect(avatarUrl).toHaveValue(`${authorImageOrigin}/{username}.png`);
+      await page.screenshot({ path: testInfo.outputPath("avatar-settings-editor.png") });
+      await cancelAvatar.click();
+      const agent = await panta.createAgent({
+        provider: "mock",
+        cwd: workspace.repoPath,
+        workspaceId: workspace.workspaceId,
+        model: "e2e-fast-stream",
+        modeId: "load-test",
+        initialPrompt: "Prompt by panta",
+        featureValues: { mockAssistantResponse: "Done." },
+      });
+      await panta.waitForFinish(agent.id);
+      expect((await panta.fetchAgentTimeline(agent.id)).entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            item: expect.objectContaining({
+              type: "user_message",
+              author: expect.objectContaining({ username: "panta" }),
+            }),
+          }),
+        ]),
+      );
+      await openAgentRoute(page, { workspaceId: workspace.workspaceId, agentId: agent.id });
+      const first = page.getByTestId("user-message").filter({ hasText: "Prompt by panta" });
+      await expect(first.getByTestId("user-message-author")).toContainText("panta", {
+        timeout: 30_000,
+      });
+      await expect(first.getByTestId("user-message-avatar")).toBeVisible();
+      await expect(
+        first.getByTestId("user-message-bubble").getByTestId("user-message-author"),
+      ).toContainText("panta");
+      const bubble = await first.getByTestId("user-message-bubble").boundingBox();
+      const avatar = await first.getByTestId("user-message-avatar-frame").boundingBox();
+      if (!bubble || !avatar) throw new Error("Prompt author layout is missing");
+      expect(avatar.width).toBe(32);
+      expect(avatar.x - bubble.x - bubble.width).toBeCloseTo(8, 0);
+      expect(avatar.y - bubble.y).toBeCloseTo(2, 0);
+      await ivana.sendAgentMessage(agent.id, "Prompt by ivana");
+      await ivana.waitForFinish(agent.id);
+      const second = page.getByTestId("user-message").filter({ hasText: "Prompt by ivana" });
+      await expect(second.getByTestId("user-message-author")).toContainText("ivana");
+      await expect(second.getByTestId("user-message-avatar")).toHaveCount(0);
+      await expect(second.getByTestId("user-message-avatar-frame")).toHaveText("IV");
+      await page.reload();
+      await expect(first.getByTestId("user-message-author")).toContainText("panta");
+      await expect(first.getByTestId("user-message-avatar")).toBeVisible();
+      await expect(second.getByTestId("user-message-author")).toContainText("ivana");
+      await expectAgentIdle(page);
+      await expectComposerEditable(page);
+      await page.screenshot({ path: testInfo.outputPath("prompt-authors.png") });
+      await expectComposerVisible(page);
+      await submitMessage(page, "Unattributed prompt");
+      const anonymous = page.getByTestId("user-message").filter({ hasText: "Unattributed prompt" });
+      await expect(anonymous).toBeVisible();
+      await expectAgentIdle(page);
+      await page.reload();
+      await expect(anonymous).toBeVisible();
+      await expect(anonymous.getByTestId("user-message-author")).toHaveCount(0);
+      await expect(anonymous.getByTestId("user-message-avatar-frame")).toHaveCount(0);
+      await expect(anonymous.getByTestId("user-message-bubble")).toHaveText("Unattributed prompt");
+      const namedBubble = await second.getByTestId("user-message-bubble").boundingBox();
+      const anonymousBubble = await anonymous.getByTestId("user-message-bubble").boundingBox();
+      if (!namedBubble || !anonymousBubble) throw new Error("Mixed prompt layout is missing");
+      expect(anonymousBubble.x + anonymousBubble.width).toBeCloseTo(
+        namedBubble.x + namedBubble.width,
+        0,
+      );
+      await page.screenshot({ path: testInfo.outputPath("prompt-authors-mixed-wide.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(anonymous).toBeVisible();
+      const narrowRow = await anonymous.boundingBox();
+      const narrowBubble = await anonymous.getByTestId("user-message-bubble").boundingBox();
+      if (!narrowRow || !narrowBubble) throw new Error("Narrow prompt layout is missing");
+      expect(narrowBubble.x).toBeGreaterThanOrEqual(narrowRow.x);
+      expect(narrowRow.x + narrowRow.width - narrowBubble.x - narrowBubble.width).toBeCloseTo(
+        40,
+        0,
+      );
+      await page.screenshot({ path: testInfo.outputPath("prompt-authors-mixed-narrow.png") });
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await openSettings(page);
+      await openSettingsHostSection(page, getServerId(), "host");
+      await editAvatar.click();
+      await avatarUrl.fill("");
+      await saveAvatar.click();
+      await expect(page.getByText("Avatar settings saved", { exact: true })).toBeVisible();
+      await expect(avatarModal).toHaveCount(0);
+      await expect(avatarValue).toHaveText("Initials");
+      await expect.poll(async () => (await panta.getDaemonConfig()).config.userAvatarUrl).toBe("");
+      const history = await panta.fetchAgentTimeline(agent.id);
+      const authored = history.entries
+        .map((entry) => entry.item)
+        .filter((item) => item.type === "user_message" && item.author);
+      expect(authored).toHaveLength(2);
+      expect(authored).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ author: { username: "panta" } }),
+          expect.objectContaining({ author: { username: "ivana" } }),
+        ]),
+      );
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(editAvatar).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath("avatar-settings-narrow.png") });
+      await editAvatar.click();
+      await expect(avatarUrl).toHaveValue("");
+      await page.screenshot({ path: testInfo.outputPath("avatar-settings-editor-narrow.png") });
+      await cancelAvatar.click();
+    } finally {
+      await panta.close();
+      await ivana.close();
+      await workspace.cleanup();
+    }
+  },
+);
 
 interface SubmissionScenario {
   existingPrompt: string;

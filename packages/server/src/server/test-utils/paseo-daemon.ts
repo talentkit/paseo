@@ -16,6 +16,8 @@ import type { PushNotificationSender } from "../push/index.js";
 import type { AgentProfile } from "@getpaseo/protocol/messages";
 
 interface TestPaseoDaemonOptions {
+  userIdentityProxySecret?: string;
+  userAvatarUrl?: string;
   daemonVersion?: string;
   desktopManaged?: boolean;
   downloadTokenTtlMs?: number;
@@ -187,6 +189,8 @@ async function prepareTestDaemonConfig(
   const listenHost = options.listen ?? "127.0.0.1";
   const listenPort = options.listenPort ?? 0;
   const config: PaseoDaemonConfig = {
+    userIdentityProxySecret: options.userIdentityProxySecret,
+    userAvatarUrl: options.userAvatarUrl,
     listen: `${listenHost}:${listenPort}`,
     paseoHome,
     daemonVersion: options.daemonVersion,

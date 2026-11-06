@@ -2688,6 +2688,15 @@ export const fr: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "Initiales",
+        edit: "Modifier le modèle d’URL de l’avatar",
+        title: "Avatars des messages",
+        url: "Modèle d’URL de l’avatar",
+        info: "Utilisez {username} dans une URL d’image HTTP ou HTTPS. Laissez vide pour afficher les initiales.",
+        invalidUrl: "Saisissez une URL HTTP ou HTTPS, ou laissez vide pour les initiales.",
+        saved: "Paramètres des avatars enregistrés",
+      },
       password: {
         guidance:
           "Supprimez cet hôte puis ajoutez-le à nouveau avec le mot de passe demandé par ce daemon.",

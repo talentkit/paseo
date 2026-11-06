@@ -14,6 +14,26 @@ import {
   AgentTimelineEntryPayloadSchema,
 } from "./messages.js";
 
+test("prompt authors are optional and old clients ignore them", () => {
+  const legacyUserMessage = z.object({
+    type: z.literal("user_message"),
+    text: z.string(),
+    messageId: z.string().optional(),
+    clientMessageId: z.string().optional(),
+  });
+  const oldMessage = { type: "user_message", text: "Hello", messageId: "message-1" };
+  const attributed = {
+    ...oldMessage,
+    author: { username: "panta", avatarUrl: "https://images.example.com/panta.png" },
+  };
+  expect(legacyUserMessage.parse(attributed)).toEqual(oldMessage);
+  expect(AgentTimelineItemPayloadSchema.parse(oldMessage)).toEqual(oldMessage);
+  expect(AgentTimelineItemPayloadSchema.parse(attributed)).toEqual(attributed);
+  const legacyInfo = z.object({ status: z.literal("server_info"), serverId: z.string() });
+  const info = { status: "server_info", serverId: "host" };
+  expect(legacyInfo.parse({ ...info, userAuthor: attributed.author })).toEqual(info);
+});
+
 test("terminal listings accept older rows and retain new per-terminal directories", () => {
   const response = {
     type: "list_terminals_response",

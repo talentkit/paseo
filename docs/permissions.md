@@ -54,6 +54,42 @@ A delegating principal can grant only authority it already possesses. A session 
 
 Workspace-scoped grants require every resource-bearing operation and outbound observation to enforce the same workspace boundary. In this fork, file browsing, previews, edits and transfers can reach any path the daemon user can access, including external symlink targets. A workspace cwd supplies a base for relative paths, not an access boundary. These operations must gain resource enforcement before workspace-specific access ships.
 
+## Proxy user attribution
+
+To label human prompts behind a reverse proxy, set `PASEO_USER_IDENTITY_PROXY_SECRET` on the
+daemon. On authenticated requests, have the proxy overwrite `X-Paseo-User` with the verified
+username and `X-Paseo-Proxy-Secret` with that secret. Clear both headers on unauthenticated
+routes. Forward them on the `/ws` upgrade; ordinary HTTP requests do not establish a chat's
+author. Keep the secret between the proxy and daemon, never in browser code.
+
+Only use nginx's `$remote_user` when Basic auth was enforced. If another credential bypasses
+Basic auth, derive the username from that validated credential. Shared credentials cannot
+identify one person. Relay connections and direct connections without the proxy secret have
+no proxy author. Attribution does not grant permissions or replace daemon authentication.
+
+Set the avatar URL pattern in **Settings → your host → Overview → Prompt avatars**.
+Saving applies it immediately to new prompts and reloaded history. Leave it empty to use
+initials. The setting is stored as `daemon.userAvatarUrl` in `config.json`:
+
+```json
+{
+  "daemon": {
+    "userAvatarUrl": "https://images.example.com/users/{username}.png"
+  }
+}
+```
+
+Use an HTTP or HTTPS image URL with `{username}` where the encoded username belongs. The
+client loads the image directly, so its URL must be accessible to the viewer. Missing images
+show initials. Avatar URLs are resolved when
+sending history, so changing the image host does not rewrite saved prompts.
+
+The daemon records authors at submission, including agent creation and steering. It saves
+attribution in the agent record and restores it by message ID when replaying provider history
+after a restart. Old history and provider messages without a matching identity stay unattributed. Author fields are optional additions to existing messages; older mobile
+clients ignore them and keep their existing send and login flows. A mobile connection through
+the authenticated proxy can still author prompts that the updated web UI identifies.
+
 ## Hub
 
 The Hub authenticates as a service principal. Its locally selected grants decide whether it may execute agents, manage the daemon, manage tunnels, or manage access.

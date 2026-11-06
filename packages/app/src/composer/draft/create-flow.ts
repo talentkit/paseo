@@ -151,6 +151,10 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
           },
   );
 
+  const authorServerId = getPendingServerId();
+  const userAuthor = useSessionStore((state) =>
+    authorServerId ? state.sessions[authorServerId]?.serverInfo?.userAuthor : undefined,
+  );
   const pending = useCreateFlowStore((state) => state.pendingByDraftId[draftId]);
   // Remounts can precede model hydration. Rebuild the preview when its inputs
   // arrive, and observe the original request's failure through shared state.
@@ -185,6 +189,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
 
     return [
       createUserMessage({
+        author: userAuthor,
         clientMessageId: machine.attempt.clientMessageId,
         text: machine.attempt.text,
         timestamp: machine.attempt.timestamp,
@@ -192,7 +197,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         attachments: machine.attempt.attachments,
       }),
     ];
-  }, [machine]);
+  }, [machine, userAuthor]);
   const pendingMessageSubmissions = useMemo<readonly PendingMessageSubmission[]>(() => {
     if (machine.tag !== "creating") return [];
     return [
@@ -246,6 +251,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
             pendingServerId,
             createResult.agentId,
             createUserMessage({
+              author: userAuthor,
               clientMessageId: attempt.clientMessageId,
               text: attempt.text,
               timestamp: attempt.timestamp,
@@ -272,6 +278,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     },
     [
       createRequest,
+      userAuthor,
       draftId,
       getPendingServerId,
       markPendingCreateLifecycle,
