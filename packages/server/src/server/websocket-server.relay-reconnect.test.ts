@@ -83,6 +83,7 @@ const sessionMock = vi.hoisted(() => {
       this.args.sourceId = sourceId;
     };
     getHostSourceId = () => this.args.sourceId as string;
+    getUserAuthor = () => undefined;
     allowsInbound = vi.fn(() => true);
     allowsPermission = vi.fn(() => true);
     publish = vi.fn((message: unknown) => {
@@ -258,6 +259,7 @@ function createServer(options?: {
 }) {
   const speechReadiness = options?.speechReadiness ?? null;
   const daemonConfigStore = {
+    get: () => ({ userAvatarUrl: "" }),
     onApply: vi.fn(() => () => {}),
     onChange: vi.fn(() => () => {}),
   };

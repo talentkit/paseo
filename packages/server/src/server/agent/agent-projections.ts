@@ -96,6 +96,8 @@ export function toStoredAgentRecord(
     title: options?.title ?? null,
     labels: agent.labels,
     metadata: agent.metadata,
+    userMessageAuthors: agent.userMessageAuthors,
+    participants: agent.participants,
     lastStatus: agent.lifecycle,
     lastModeId: agent.currentModeId ?? config?.modeId ?? null,
     config: config ?? null,
@@ -166,6 +168,7 @@ export function toAgentPayload(
     title: options?.title ?? null,
     labels: agent.labels,
     metadata: agent.metadata,
+    ...(agent.participants?.length ? { participants: agent.participants } : {}),
     archivedAt: options?.archivedAt ?? null,
     ...visibilityFlags(agent),
     ...projectSessionMetrics(agent.sessionMetrics),
@@ -270,6 +273,14 @@ function visibleStoredBackgroundWork(
   return record.internal || record.archivedAt ? undefined : summary;
 }
 
+/**
+ * Prompt attribution is optional on the wire: an agent that was only prompted by unattributed
+ * connections sends nothing, rather than an empty list that every client has to interpret.
+ */
+function promptParticipants(record: StoredAgentRecord): Pick<AgentSnapshotPayload, "participants"> {
+  return record.participants?.length ? { participants: record.participants } : {};
+}
+
 export function buildStoredAgentPayload(
   record: StoredAgentRecord,
   validProviders: Iterable<AgentProvider>,
@@ -330,6 +341,7 @@ export function buildStoredAgentPayload(
     ...visibilityFlags(record),
     labels: normalizeLabels(record.labels),
     metadata: record.metadata,
+    ...promptParticipants(record),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...projectSessionMetrics(record.sessionMetrics),
     ...(providerAvailable ? {} : { providerUnavailable: true }),

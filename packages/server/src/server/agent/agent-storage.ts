@@ -1,3 +1,4 @@
+import { UserMessageAuthorSchema } from "@getpaseo/protocol/user-message-author";
 import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -63,6 +64,8 @@ const RAW_STORED_AGENT_SCHEMA = z.object({
   title: z.string().nullable().optional(),
   labels: z.record(z.string(), z.string()).default({}),
   metadata: z.record(z.string(), z.custom<JsonValue>()).default({}),
+  userMessageAuthors: z.record(z.string(), UserMessageAuthorSchema).optional(),
+  participants: z.array(UserMessageAuthorSchema).optional(),
   lastStatus: AgentStatusSchema.default("closed"),
   resumeOnStartup: z.boolean().optional(),
   lastModeId: z.string().nullable().optional(),

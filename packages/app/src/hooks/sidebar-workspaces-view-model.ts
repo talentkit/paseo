@@ -5,6 +5,7 @@ import { selectPrHintFromStatus } from "@/git/pr-hint";
 import { type HostProjectListItem } from "@/projects/host-project-model";
 import type { PendingCreateAttempt } from "@/stores/create-flow-store";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type {
   WorkspaceStructureHostPlacement,
   WorkspaceStructureProject,
@@ -46,6 +47,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   title: string | null;
   pinnedAt?: string | null;
   labels?: string[];
+  /** Distinct humans who prompted this workspace, most recent first. Empty when no proxy author. */
+  participants: readonly UserMessageAuthor[];
   // Checkout branch (null when not a git checkout or detached HEAD).
   currentBranch: string | null;
   archivingAt: string | null;
@@ -167,6 +170,7 @@ export function createSidebarWorkspaceEntry(input: {
     title: input.workspace.title ?? null,
     pinnedAt: input.workspace.pinnedAt,
     labels: input.workspace.labels ?? EMPTY_WORKSPACE_LABELS,
+    participants: input.workspace.participants ?? EMPTY_WORKSPACE_PARTICIPANTS,
     currentBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.currentBranch),
     statusBucket: effectiveStatus.status,
     statusEnteredAt: effectiveStatus.enteredAt,
@@ -184,6 +188,7 @@ export function createSidebarWorkspaceEntry(input: {
 }
 
 const EMPTY_WORKSPACE_LABELS: string[] = [];
+const EMPTY_WORKSPACE_PARTICIPANTS: UserMessageAuthor[] = [];
 
 export interface ProjectStatusSession {
   workspaces: Map<string, WorkspaceDescriptor>;

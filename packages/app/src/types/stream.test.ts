@@ -158,6 +158,29 @@ describe("plugin timeline rows", () => {
 });
 
 describe("user message identity", () => {
+  it("preserves server authors through optimistic reconciliation and draft handoff", () => {
+    const timestamp = new Date("2026-11-06T10:00:00Z");
+    const author = { username: "panta", avatarUrl: "https://images.example.com/panta.png" };
+    const optimistic = createUserMessage({ clientMessageId: "prompt", text: "Hello", timestamp });
+    const event: AgentStreamEventPayload = {
+      type: "timeline",
+      provider: "codex",
+      item: {
+        type: "user_message",
+        text: "Hello",
+        messageId: "prompt",
+        clientMessageId: "prompt",
+        author,
+      },
+    };
+    const result = applyStreamEvent({ tail: [optimistic], head: [], event, timestamp });
+    expect(result.tail).toHaveLength(1);
+    expect(result.tail[0]).toMatchObject({ id: "prompt", author });
+    const handoff = handoffCreatedAgentUserMessageToStream({ ...result, message: optimistic });
+    expect(handoff.tail[0]).toMatchObject({ id: "prompt", author });
+    expect(reduceStreamUpdate([], event, timestamp)[0]).toMatchObject({ author });
+  });
+
   it("replaces provisional optimistic turn membership with canonical membership", () => {
     const optimistic = createUserMessage({
       clientMessageId: "hello-client",

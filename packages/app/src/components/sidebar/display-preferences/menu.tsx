@@ -25,6 +25,7 @@ import {
   Settings2,
   Tag,
   Type,
+  Users,
 } from "lucide-react-native";
 import {
   MenuItem,
@@ -117,6 +118,9 @@ const CHECKS_DISPLAY_ICONS: Record<SidebarChecksDisplay, OptionIcon> = {
   icon: ThemedCircleCheck,
   none: withUnistyles(EyeOff),
 };
+
+/** The row's own mark for this: a group of people, matching the stack it switches. */
+const PARTICIPANT_HEADS_ICON = withUnistyles(Users);
 
 const TRAILING_ICONS: Record<SidebarTrailingChoice, OptionIcon> = {
   diff: withUnistyles(Diff),
@@ -634,6 +638,15 @@ function ShowPage({ preferences }: { preferences: Preferences }): ReactElement {
           testID={`sidebar-row-item-${item}`}
         />
       ))}
+      <OptionItem
+        value="participants"
+        icon={PARTICIPANT_HEADS_ICON}
+        label={t("sidebar.display.show.participants")}
+        selected={preferences.showParticipantHeads}
+        closeOnSelect={false}
+        onSelect={preferences.toggleParticipantHeads}
+        testID="sidebar-participant-heads-toggle"
+      />
       <ChecksSubTrigger />
       {preferences.pluginRowBadgeItems.length > 0 ? (
         <MenuSeparator testID="sidebar-plugin-row-badge-items-separator" />

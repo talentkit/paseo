@@ -2,7 +2,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, test } from "../support/fixtures";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { expect, test as baseTest } from "../support/fixtures";
+import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
+import { getServerId } from "../support/helpers/server-id";
 import { gotoAppShell } from "../support/helpers/app";
 import { connectNewWorkspaceDaemonClient } from "../support/helpers/new-workspace";
 import { pluginRequirements } from "../support/helpers/plugin-fixture";
@@ -12,6 +15,13 @@ import {
   openMobileAgentSidebar,
   openSidebarDisplayPage,
 } from "../support/helpers/sidebar";
+
+const test = baseTest.extend({
+  e2eDaemonEnvironment: [
+    { PASEO_USER_IDENTITY_PROXY_SECRET: "row-badges-proxy-secret" },
+    { scope: "worker" },
+  ],
+});
 
 const PLUGIN_ID = "row-badges-e2e";
 const TITLE = "Badge host workspace";
@@ -82,6 +92,10 @@ test("a plugin badge shows on workspace rows, hides quietly, and follows its Sho
   test.setTimeout(120_000);
   const workspace = await seedWorkspace({ repoPrefix: "row-badges-", title: TITLE });
   const client = await connectNewWorkspaceDaemonClient({ ownProjects: false });
+  const author = await connectDaemonClient<DaemonClient>({
+    clientIdPrefix: "row-badges-author",
+    headers: { "X-Paseo-User": "panta", "X-Paseo-Proxy-Secret": "row-badges-proxy-secret" },
+  });
   const config = await client.getDaemonConfig();
   const directory = await mkdtemp(path.join(tmpdir(), "paseo-row-badges-"));
   try {
@@ -92,6 +106,16 @@ test("a plugin badge shows on workspace rows, hides quietly, and follows its Sho
     await writeFile(path.join(directory, "index.client.tsx"), PLUGIN_SOURCE);
     await client.patchDaemonConfig({ pluginsEnabled: true });
     await client.installDirectoryPlugin(directory);
+    const agent = await author.createAgent({
+      provider: "mock",
+      cwd: workspace.repoPath,
+      workspaceId: workspace.workspaceId,
+      model: "e2e-fast-stream",
+      modeId: "load-test",
+      initialPrompt: "Check badges beside participant avatars",
+      featureValues: { mockAssistantResponse: "Done." },
+    });
+    await author.waitForFinish(agent.id);
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoAppShell(page);
@@ -109,6 +133,7 @@ test("a plugin badge shows on workspace rows, hides quietly, and follows its Sho
         page.getByLabel("Empty label state", { exact: true }).locator("visible=true"),
       ).toBeVisible();
       await expect(page.getByText(TITLE).first()).toBeVisible();
+      await expect(page.getByTestId("sidebar-participant-head-panta")).toBeVisible();
       await page.screenshot({ path: info.outputPath("wide.png") });
     });
 
@@ -128,10 +153,29 @@ test("a plugin badge shows on workspace rows, hides quietly, and follows its Sho
       await expect(badge(page, "review")).toBeVisible();
     });
 
+    await test.step("inline renaming preserves the badges and participant avatars", async () => {
+      const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
+      const row = page.getByTestId(`sidebar-workspace-row-${workspaceKey}`);
+      await row.hover();
+      await page.getByTestId(`sidebar-workspace-kebab-${workspaceKey}`).click();
+      await page.getByTestId(`sidebar-workspace-menu-rename-${workspaceKey}`).click();
+      const input = page.getByTestId(`sidebar-workspace-rename-input-${workspaceKey}`);
+      await expect(input).toBeFocused();
+      await input.fill("Renamed badge workspace");
+      await input.press("Enter");
+      await expect(input).toHaveCount(0);
+      await page.mouse.move(1100, 850);
+      await expect(row).toContainText("Renamed badge workspace");
+      await expect(badge(page, "review")).toBeVisible();
+      await expect(row.getByTestId("sidebar-participant-head-panta")).toBeVisible();
+      await page.screenshot({ path: info.outputPath("renamed-with-participants.png") });
+    });
+
     await test.step("the badge draws on a compact layout", async () => {
       await page.setViewportSize({ width: 390, height: 844 });
       await openMobileAgentSidebar(page);
       await expect(badge(page, "review")).toBeVisible();
+      await expect(page.getByTestId("sidebar-participant-head-panta")).toBeVisible();
       await page.screenshot({ path: info.outputPath("compact.png") });
       await toggleShowItem(page, "Review state", true);
       await expect(badge(page, "review")).toHaveCount(0);
@@ -139,6 +183,7 @@ test("a plugin badge shows on workspace rows, hides quietly, and follows its Sho
       await expect(badge(page, "review")).toBeVisible();
     });
   } finally {
+    await author.close();
     await client.removePlugin(PLUGIN_ID).catch(() => undefined);
     await client.patchDaemonConfig({ pluginsEnabled: config.config.pluginsEnabled });
     await client.close();

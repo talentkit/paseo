@@ -18,6 +18,19 @@ const isWorkItem = (item?: StreamItem | null) =>
   item?.kind === "todo_list" ||
   item?.kind === "turn_summary";
 
+export function continuesUserMessageGroup(
+  item: StreamItem | null,
+  nextItem: StreamItem | null,
+): boolean {
+  if (item?.kind !== "user_message" || nextItem?.kind !== "user_message") {
+    return false;
+  }
+  if (item.sender || nextItem.sender) {
+    return false;
+  }
+  return item.author !== undefined && item.author.username === nextItem.author?.username;
+}
+
 export function getGapBetweenStreamItems(
   item: StreamItem | null,
   belowItem: StreamItem | null,
@@ -27,7 +40,7 @@ export function getGapBetweenStreamItems(
   }
 
   if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
-    return SPACING[1];
+    return continuesUserMessageGroup(item, belowItem) ? SPACING[2] : SPACING[4];
   }
   if (isUserMessageItem(item)) {
     return SPACING[4];

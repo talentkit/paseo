@@ -1,7 +1,11 @@
 import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
-import { getAssistantMessageSpacing, getGapBetweenStreamItems } from "./spacing";
+import {
+  continuesUserMessageGroup,
+  getAssistantMessageSpacing,
+  getGapBetweenStreamItems,
+} from "./spacing";
 import type { StreamFrameChildOrder, StreamStrategy } from "./strategy";
 import { continuesResponse, continuesTurn, isResponseBoundary } from "./turn-membership";
 
@@ -335,8 +339,8 @@ function layoutSegmentItem(
     assistantSpacing,
     completedFooter,
     toolSequence: getToolSequence({ item, aboveItem, belowItem }),
-    isFirstInUserGroup: item.kind === "user_message" && aboveItem?.kind !== "user_message",
-    isLastInUserGroup: item.kind === "user_message" && belowItem?.kind !== "user_message",
+    isFirstInUserGroup: item.kind === "user_message" && !continuesUserMessageGroup(aboveItem, item),
+    isLastInUserGroup: item.kind === "user_message" && !continuesUserMessageGroup(item, belowItem),
     isLastInToolSequence:
       isToolSequenceItem(item) &&
       !(isToolSequenceItem(belowItem) && continuesTurn(item, belowItem)),
@@ -371,6 +375,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
       liveHeadBoundaryItem?.turnId ?? "null",
+      continuesUserMessageGroup(historyBoundaryItem, liveHeadBoundaryItem),
       auxiliaryTurnFooter?.itemId ?? "null",
       hasAuxiliaryFooter ? "footer" : "no-footer",
     ].join(":");

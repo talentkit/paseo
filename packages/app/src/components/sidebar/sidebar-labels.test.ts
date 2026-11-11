@@ -23,6 +23,7 @@ function workspace(
     title: null,
     pinnedAt,
     labels,
+    participants: [],
     currentBranch: "main",
     statusBucket: "done",
     statusEnteredAt: null,

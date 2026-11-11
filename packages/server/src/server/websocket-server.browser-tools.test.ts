@@ -292,6 +292,7 @@ function createVoiceAssistantWebSocketServer(params: {
     }),
   };
   const daemonConfigStore = {
+    get: () => ({ userAvatarUrl: "" }),
     onApply: () => () => {},
     onChange: () => () => {},
   };

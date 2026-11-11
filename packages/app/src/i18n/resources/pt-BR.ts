@@ -1278,6 +1278,7 @@ export const ptBR: TranslationResources = {
         checks: "Verificações",
         services: "Serviços",
         labels: "Etiquetas",
+        participants: "Participantes",
         diff: "Estatísticas de diff",
         timestamp: "Última atividade",
       },
@@ -2839,6 +2840,15 @@ export const ptBR: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "Iniciais",
+        edit: "Editar padrão de URL do avatar",
+        title: "Avatares das mensagens",
+        url: "Padrão de URL do avatar",
+        info: "Use {username} em uma URL de imagem HTTP ou HTTPS. Deixe vazio para mostrar as iniciais.",
+        invalidUrl: "Insira uma URL HTTP ou HTTPS, ou deixe vazio para usar as iniciais.",
+        saved: "Configurações de avatar salvas",
+      },
       password: {
         guidance: "Remova este host e adicione-o novamente com a senha que este daemon pede.",
       },

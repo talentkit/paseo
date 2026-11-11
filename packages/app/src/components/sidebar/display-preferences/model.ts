@@ -37,6 +37,9 @@ export interface SidebarDisplayPreferences {
   pluginRowBadgeItems: readonly PluginWorkspaceRowBadgeItemGroup[];
   isPluginRowBadgeItemVisible: (key: string) => boolean;
   togglePluginRowBadgeItem: (key: string) => void;
+  /** Whether a row draws the faces of the people who prompted it. */
+  showParticipantHeads: boolean;
+  toggleParticipantHeads: () => void;
   checksDisplay: SidebarChecksDisplay;
   setChecksDisplay: (display: SidebarChecksDisplay) => void;
   trailing: SidebarWorkspaceTrailing;
@@ -86,6 +89,7 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       sidebarRowItems,
       sidebarChecksDisplay,
       sidebarPluginRowBadgeItems,
+      sidebarParticipantHeads,
     },
     updateSettings,
   } = useAppSettings();
@@ -126,6 +130,10 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
     [updateSettings, sidebarRowItems],
   );
 
+  const toggleParticipantHeads = useCallback(() => {
+    void updateSettings({ sidebarParticipantHeads: !sidebarParticipantHeads });
+  }, [updateSettings, sidebarParticipantHeads]);
+
   const setChecksDisplay = useCallback(
     (display: SidebarChecksDisplay) => {
       void updateSettings({ sidebarChecksDisplay: display });
@@ -157,6 +165,8 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       pluginRowBadgeItems,
       isPluginRowBadgeItemVisible,
       togglePluginRowBadgeItem,
+      showParticipantHeads: sidebarParticipantHeads,
+      toggleParticipantHeads,
       checksDisplay: sidebarChecksDisplay,
       setChecksDisplay,
       trailing: sidebarWorkspaceTrailing,
@@ -185,6 +195,8 @@ export function useSidebarDisplayPreferences(): SidebarDisplayPreferences {
       pluginRowBadgeItems,
       isPluginRowBadgeItemVisible,
       togglePluginRowBadgeItem,
+      sidebarParticipantHeads,
+      toggleParticipantHeads,
       sidebarChecksDisplay,
       setChecksDisplay,
       sidebarWorkspaceTrailing,

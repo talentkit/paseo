@@ -556,6 +556,7 @@ function resolveStaticLoadConfigSettings(
     browserToolsEnabled: resolveBrowserToolsEnabled(persisted),
     autoArchiveAfterMerge: persisted.daemon?.autoArchiveAfterMerge ?? false,
     appendSystemPrompt: resolveAppendSystemPrompt(persisted),
+    userAvatarUrl: persisted.daemon?.userAvatarUrl,
     ...resolveProfileLists(persisted),
     hostnames: mergeHostnames([
       persisted.daemon?.hostnames,
@@ -587,6 +588,7 @@ export type ResolvedDaemonSettings = Pick<
   | "autoArchiveAfterMerge"
   | "enableTerminalAgentHooks"
   | "appendSystemPrompt"
+  | "userAvatarUrl"
   | "terminalProfiles"
   | "agentProfiles"
   | "skillSelection"
@@ -643,6 +645,7 @@ export function resolveConfigFromPersisted(
     serviceProxy: resolveServiceProxyConfig(env, persisted),
     webUi: resolveWebUiConfig(paseoHome, env, cli, persisted),
     auth: resolveAuthConfig(env, persisted),
+    userIdentityProxySecret: env.PASEO_USER_IDENTITY_PROXY_SECRET?.trim() || undefined,
     openai,
     speech,
     voiceLlmProvider: voiceLlm.provider,

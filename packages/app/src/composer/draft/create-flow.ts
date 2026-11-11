@@ -144,6 +144,10 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
           },
   );
 
+  const authorServerId = getPendingServerId();
+  const userAuthor = useSessionStore((state) =>
+    authorServerId ? state.sessions[authorServerId]?.serverInfo?.userAuthor : undefined,
+  );
   const pending = useCreateFlowStore((state) => state.pendingByDraftId[draftId]);
   // Remounts can precede model hydration. Rebuild the preview when its inputs
   // arrive, and observe the original request's failure through shared state.
@@ -207,6 +211,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
             pendingServerId,
             createResult.agentId,
             createUserMessage({
+              author: userAuthor,
               clientMessageId: attempt.clientMessageId,
               text: attempt.text,
               timestamp: attempt.timestamp,
@@ -233,6 +238,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     },
     [
       createRequest,
+      userAuthor,
       draftId,
       getPendingServerId,
       markPendingCreateLifecycle,

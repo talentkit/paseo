@@ -45,6 +45,7 @@ import type {
   WorkspaceLinkPayload,
   WorkspaceProjectDescriptorPayload,
 } from "@getpaseo/protocol/messages";
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import {
   normalizeWorkspaceOpaqueId,
   normalizeWorkspacePath,
@@ -137,6 +138,8 @@ export interface WorkspaceDescriptor {
   title?: string | null;
   pinnedAt?: string | null;
   labels?: string[];
+  /** Distinct humans who prompted this workspace, most recent first. */
+  participants?: UserMessageAuthor[];
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
   archivingAt: string | null;
@@ -149,6 +152,8 @@ export interface WorkspaceDescriptor {
   forgeWeb?: WorkspaceDescriptorPayload["forgeWeb"];
   project?: ProjectPlacementPayload;
 }
+
+const EMPTY_PARTICIPANTS: UserMessageAuthor[] = [];
 
 export function normalizeWorkspaceDescriptor(
   payload: WorkspaceDescriptorPayload,
@@ -184,6 +189,8 @@ export function normalizeWorkspaceDescriptor(
     pinnedAt: payload.pinnedAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
+    // COMPAT(promptParticipants): old daemons omit participants; remove after 2027-05-10.
+    participants: payload.participants ?? EMPTY_PARTICIPANTS,
     status: payload.status,
     statusEnteredAt,
     archivingAt: payload.archivingAt ?? null,
@@ -293,6 +300,7 @@ export interface AgentFileExplorerState {
 }
 
 export interface DaemonServerInfo {
+  userAuthor?: ServerInfoStatusPayload["userAuthor"];
   serverId: string;
   hostname: string | null;
   version: string | null;
@@ -305,6 +313,7 @@ export interface DaemonServerInfo {
 export function toDaemonServerInfo(serverInfo: ServerInfoStatusPayload): DaemonServerInfo {
   return {
     serverId: serverInfo.serverId,
+    ...(serverInfo.userAuthor ? { userAuthor: serverInfo.userAuthor } : {}),
     hostname: serverInfo.hostname ?? null,
     version: serverInfo.version ?? null,
     ...(serverInfo.machineKind !== undefined ? { machineKind: serverInfo.machineKind } : {}),
@@ -795,6 +804,7 @@ function isSessionServerInfoUnchanged(input: {
   nextDesktopManaged: boolean | undefined;
   nextCapabilities: ServerCapabilities | undefined;
   nextFeatures: ServerInfoStatusPayload["features"] | undefined;
+  nextUserAuthor: DaemonServerInfo["userAuthor"];
   nextServerId: string;
 }): boolean {
   const {
@@ -805,18 +815,22 @@ function isSessionServerInfoUnchanged(input: {
     nextDesktopManaged,
     nextCapabilities,
     nextFeatures,
+    nextUserAuthor,
   } = input;
-  const prevHostname = currentServerInfo?.hostname?.trim() || null;
-  const prevVersion = currentServerInfo?.version?.trim() || null;
-  const prevMachineKind = currentServerInfo?.machineKind?.trim() || null;
+  if (!currentServerInfo) return false;
+  const prevHostname = currentServerInfo.hostname?.trim() || null;
+  const prevVersion = currentServerInfo.version?.trim() || null;
+  const prevMachineKind = currentServerInfo.machineKind?.trim() || null;
   return (
-    currentServerInfo?.serverId === input.nextServerId &&
+    currentServerInfo.serverId === input.nextServerId &&
     prevHostname === nextHostname &&
     prevVersion === nextVersion &&
     prevMachineKind === nextMachineKind &&
-    currentServerInfo?.desktopManaged === nextDesktopManaged &&
-    areServerCapabilitiesEqual(currentServerInfo?.capabilities, nextCapabilities) &&
-    areServerInfoFeaturesEqual(currentServerInfo?.features, nextFeatures)
+    currentServerInfo.desktopManaged === nextDesktopManaged &&
+    currentServerInfo.userAuthor?.username === nextUserAuthor?.username &&
+    currentServerInfo.userAuthor?.avatarUrl === nextUserAuthor?.avatarUrl &&
+    areServerCapabilitiesEqual(currentServerInfo.capabilities, nextCapabilities) &&
+    areServerInfoFeaturesEqual(currentServerInfo.features, nextFeatures)
   );
 }
 
@@ -955,6 +969,7 @@ export const useSessionStore = create<SessionStore>()(
           const nextDesktopManaged = info.desktopManaged;
           const nextCapabilities = info.capabilities;
           const nextFeatures = info.features;
+          const nextUserAuthor = info.userAuthor;
 
           if (
             isSessionServerInfoUnchanged({
@@ -965,6 +980,7 @@ export const useSessionStore = create<SessionStore>()(
               nextDesktopManaged,
               nextCapabilities,
               nextFeatures,
+              nextUserAuthor,
               nextServerId: info.serverId,
             })
           ) {
@@ -987,6 +1003,7 @@ export const useSessionStore = create<SessionStore>()(
                     : {}),
                   ...(nextCapabilities ? { capabilities: nextCapabilities } : {}),
                   ...(nextFeatures ? { features: nextFeatures } : {}),
+                  ...(nextUserAuthor ? { userAuthor: nextUserAuthor } : {}),
                 },
               },
             },

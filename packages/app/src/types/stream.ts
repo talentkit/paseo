@@ -1,3 +1,4 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type {
   AgentMetric,
@@ -95,6 +96,7 @@ export type StreamItem =
 export type UserMessageImageAttachment = AttachmentMetadata;
 
 export interface UserMessageItem {
+  author?: UserMessageAuthor;
   /** Attribution added by presentation for received agent messages. */
   sender?: AgentMessage["sender"];
   kind: "user_message";
@@ -110,6 +112,7 @@ export interface UserMessageItem {
 }
 
 export interface UserMessageInput {
+  author?: UserMessageAuthor;
   id?: string;
   clientMessageId?: string;
   messageId?: string;
@@ -128,6 +131,7 @@ export function createUserMessage(input: UserMessageInput): UserMessageItem {
   }
   return {
     kind: "user_message",
+    ...(input.author ? { author: input.author } : {}),
     id,
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.messageId ? { messageId: input.messageId } : {}),
@@ -264,11 +268,13 @@ function produceUserMessage(
   const presentation = presentationPolicy === "incoming" ? incoming : existing;
   const merged = createUserMessage({
     ...presentation,
+    author: incoming.author ?? existing.author,
     clientMessageId: incoming.clientMessageId ?? existing.clientMessageId,
     messageId: incoming.messageId ?? existing.messageId,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
   });
   if (
+    existing.author === merged.author &&
     existing.id === merged.id &&
     existing.clientMessageId === merged.clientMessageId &&
     existing.messageId === merged.messageId &&
@@ -929,6 +935,7 @@ function appendUserMessage(
   clientMessageId?: string,
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  author?: UserMessageAuthor,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!hasContent) {
@@ -938,6 +945,7 @@ function appendUserMessage(
   const chunkSeed = chunk.trim() || chunk;
   const nextItem = createUserMessage({
     id: messageId ?? createUniqueTimelineId(state, "user", chunkSeed, timestamp),
+    author,
     clientMessageId,
     messageId,
     timelineCursor,
@@ -1552,6 +1560,7 @@ function reduceTimelineEvent(
         item.clientMessageId,
         timelineCursor,
         event.turnId,
+        item.author,
       );
     case "assistant_message":
       return appendAssistantMessage(
@@ -1913,6 +1922,7 @@ function applyCanonicalUserMessageEvent(params: {
       event.item.messageId ??
       createUniqueTimelineId([...tail, ...head], "user", normalized.chunk.trim(), timestamp),
     messageId: event.item.messageId,
+    author: event.item.author,
     clientMessageId: event.item.clientMessageId,
     turnId: event.turnId,
     timelineCursor,

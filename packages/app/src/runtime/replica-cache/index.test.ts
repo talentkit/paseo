@@ -588,6 +588,72 @@ describe("ReplicaCache", () => {
     expect(reopened.checkpoint).toEqual(baseline.checkpoint);
   });
 
+  it("preserves workspace participants after reopening a cache with a current directory cursor", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const baseline = directory({
+      agents: { generation: "g", afterSeq: 12 },
+      projects: { generation: "g", afterSeq: 4 },
+      workspaces: { generation: "g", afterSeq: 7 },
+    });
+    const participants = [
+      { username: "panta" },
+      { username: "ivana", avatarUrl: "https://images.example.com/ivana.png" },
+    ];
+    const workspace = normalizeWorkspaceDescriptor({ ...workspacePayload(), participants });
+    baseline.workspaces.set(workspace.id, workspace);
+    writer.replaceDirectoryBaseline(SERVER_ID, baseline);
+    await writer.flush();
+
+    const reader = createCache(storage);
+    expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace.participants).toEqual(
+      participants,
+    );
+    const restored = await reader.readDirectory(SERVER_ID);
+    expect(restored.workspaces.get(workspace.id)?.participants).toEqual(participants);
+    expect(restored.checkpoint).toEqual(baseline.checkpoint);
+  });
+
+  it.each([
+    { readMode: "directory", read: (cache: ReplicaCache) => cache.readDirectory(SERVER_ID) },
+    {
+      readMode: "targeted workspace",
+      read: (cache: ReplicaCache) => cache.readWorkspace(SERVER_ID, "workspace-1"),
+    },
+  ])(
+    "refetches cached workspaces that dropped participants on a $readMode read",
+    async ({ read }) => {
+      const storage = new MemoryStorage();
+      const writer = createCache(storage);
+      const baseline = directory({
+        agents: { generation: "g", afterSeq: 12 },
+        projects: { generation: "g", afterSeq: 4 },
+        workspaces: { generation: "g", afterSeq: 7 },
+      });
+      writer.replaceDirectoryBaseline(SERVER_ID, baseline);
+      await writer.flush();
+      const key = `${SERVER_ID}:workspace:workspace-1`;
+      const row = storage.rows.get(key);
+      if (!row) throw new Error("Expected the stored workspace row");
+      const payload: Record<string, unknown> = JSON.parse(row.payload);
+      delete payload.participants;
+      storage.rows.set(key, { ...row, payload: JSON.stringify(payload) });
+
+      const reader = createCache(storage);
+      await read(reader);
+      const restored = await reader.readDirectory(SERVER_ID);
+      expect(restored.workspaces.size).toBe(0);
+      expect(restored.checkpoint).toEqual({
+        agents: { generation: "g", afterSeq: 12 },
+        projects: { generation: "g", afterSeq: 4 },
+      });
+      expect(storage.changes.at(-1)).toMatchObject({
+        deletes: [{ serverId: SERVER_ID, kind: "workspace", id: "workspace-1" }],
+        upserts: [{ serverId: SERVER_ID, kind: "checkpoint", id: "singleton" }],
+      });
+    },
+  );
+
   it("preserves pending timeline updates across directory baseline replacement", async () => {
     const storage = new MemoryStorage();
     const writer = createCache(storage);
@@ -901,6 +967,27 @@ describe("ReplicaCache", () => {
 
     const reader = createCache(storage);
     expect((await reader.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([answer]);
+  });
+
+  it("round-trips prompt authors", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const item: StreamItem = {
+      kind: "user_message",
+      id: "prompt",
+      text: "Hello",
+      author: { username: "panta", avatarUrl: "https://images.example.com/panta.png" },
+      timestamp: new Date("2026-11-06T10:00:00Z"),
+      timelineCursor: { epoch: "epoch-1", seq: 12 },
+    };
+    writer.commitTimeline(SERVER_ID, "agent-1", {
+      agentId: "agent-1",
+      items: [item],
+      range: { epoch: "epoch-1", startSeq: 12, endSeq: 12 },
+      hasOlder: true,
+    });
+    await writer.flush();
+    expect((await createCache(storage).readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([item]);
   });
 
   it("round-trips plugin timeline items", async () => {

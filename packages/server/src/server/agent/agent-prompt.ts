@@ -1,3 +1,4 @@
+import { resolveClientMessageId } from "../client-message-id.js";
 import {
   prepareAgentMessage,
   type AgentMessageDelivery,
@@ -392,7 +393,11 @@ async function resolvePromptSource(
 export async function sendPromptToAgent(
   params: SendDirectPromptParams,
 ): Promise<PromptDispatchResult> {
-  const { agentMessages, source, messageId, ...send } = params;
+  const { agentMessages, source, ...send } = params;
+  // Attributed prompts need a canonical row even when an older client omits its ID.
+  const messageId = params.runOptions?.author
+    ? resolveClientMessageId(params.messageId)
+    : params.messageId;
   return agentMessages.sendDirect(
     {
       recipientId: params.agentId,
@@ -484,7 +489,9 @@ export async function startCreatedAgentInitialPrompt(
   const delivery = prepareAgentMessage(
     params.prompt,
     await resolvePromptSource(params.source, params.agentManager, params.agentStorage),
-    params.runOptions?.clientMessageId,
+    params.runOptions?.author
+      ? resolveClientMessageId(params.runOptions.clientMessageId)
+      : params.runOptions?.clientMessageId,
   );
   const dispatchResult = await startAgentRun(
     params.agentManager,

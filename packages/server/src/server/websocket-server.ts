@@ -1,3 +1,5 @@
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
+import { readProxyUser, userAuthorWithAvatar, withUserAvatars } from "./user-identity.js";
 import {
   ChunkedTransport,
   ChunkedTransportProtocolError,
@@ -168,6 +170,7 @@ export interface SessionAdmission {
 }
 
 interface PendingConnection {
+  userAuthor?: UserMessageAuthor;
   connectionLogger: pino.Logger;
   helloTimeout: ReturnType<typeof setTimeout> | null;
   identity: WebSocketConnectionIdentity;
@@ -193,6 +196,7 @@ interface WebSocketConnectionIdentity {
 }
 
 interface WebSocketServerConfig {
+  userIdentityProxySecret?: string;
   allowedOrigins?: Set<string>;
   hostnames?: HostnamesConfig;
   getAllowedOrigins?: () => Set<string>;
@@ -507,6 +511,7 @@ interface PluginSessionConnection extends SessionConnectionBase {
 type SessionConnection = ReconnectableSessionConnection | PluginSessionConnection;
 
 interface SocketSessionOptions {
+  userAuthor?: UserMessageAuthor;
   sourceId?: string;
   clientId: string;
   appVersion: string | null;
@@ -685,7 +690,7 @@ export class VoiceAssistantWebSocketServer {
     paseoHome: string,
     daemonConfigStore: DaemonConfigStore,
     mcpBaseUrl: string | null,
-    wsConfig: WebSocketServerConfig,
+    private readonly wsConfig: WebSocketServerConfig,
     workspaceAutoName: WorkspaceAutoName,
     private readonly workspaceRuntimeStore: WorkspaceRuntimeStore,
     auth?: DaemonAuthConfig,
@@ -850,8 +855,13 @@ export class VoiceAssistantWebSocketServer {
       providerSnapshotManager: this.providerSnapshotManager,
       updateProviderRegistry: (state) => this.agentManager.updateProviderRegistry(state),
     });
+    let userAvatarUrl = this.daemonConfigStore.get().userAvatarUrl;
     const unsubscribeChange = this.daemonConfigStore.onChange((config) => {
       this.broadcastDaemonConfigChanged(config);
+      if (config.userAvatarUrl !== userAvatarUrl) {
+        userAvatarUrl = config.userAvatarUrl;
+        this.broadcastCapabilitiesUpdate();
+      }
     });
     this.unsubscribeDaemonConfigChange = () => {
       unsubscribeProviderConfig();
@@ -1087,6 +1097,8 @@ export class VoiceAssistantWebSocketServer {
         undefined,
         false,
         hasHeaderCredential ? OWNER_SESSION_ADMISSION : null,
+        undefined,
+        readProxyUser(request.headers, this.wsConfig.userIdentityProxySecret),
       );
     } finally {
       ws.resume();
@@ -1363,7 +1375,15 @@ export class VoiceAssistantWebSocketServer {
 
     let payload: string;
     try {
-      payload = JSON.stringify(message);
+      // Delivery grants belong to the original message object. Decorate only after admission.
+      payload = JSON.stringify(
+        message.type === "session"
+          ? {
+              ...message,
+              message: withUserAvatars(message.message, this.daemonConfigStore.get().userAvatarUrl),
+            }
+          : message,
+      );
     } catch (err) {
       this.logger.warn({ err }, "ws_serialize_failed");
       return null;
@@ -1563,6 +1583,7 @@ export class VoiceAssistantWebSocketServer {
     allowDuringStartup = false,
     admission: SessionAdmission | null = null,
     initialHello?: WSHelloMessage,
+    userAuthor?: UserMessageAuthor,
   ): Promise<void> {
     if (
       this.connectionLifecycle === "stopping" ||
@@ -1582,6 +1603,7 @@ export class VoiceAssistantWebSocketServer {
     const connectionLogger = this.logger.child(toConnectionLogFields(identity));
 
     const pending: PendingConnection = {
+      userAuthor,
       connectionLogger,
       helloTimeout: null,
       identity,
@@ -1629,12 +1651,14 @@ export class VoiceAssistantWebSocketServer {
     connectionLogger: pino.Logger;
     lifecycle: { kind: "reconnectable" } | { kind: "ephemeral-plugin"; pluginId: string };
     admission: SessionAdmission;
+    userAuthor?: UserMessageAuthor;
   }): SessionConnection {
     const { ws, clientId, appVersion, clientCapabilities, connectionLogger, lifecycle, admission } =
       params;
     let connection: SessionConnection | null = null;
 
     const session = this.createSocketSession({
+      userAuthor: params.userAuthor,
       clientId,
       appVersion,
       clientCapabilities,
@@ -1695,7 +1719,7 @@ export class VoiceAssistantWebSocketServer {
       session,
       principalId: admission.principalId,
       hubExecutionAgents: admission.hubExecutionAgents,
-      sessionKey: sessionConnectionKey(admission.principalId, clientId),
+      sessionKey: sessionConnectionKey(admission.principalId, clientId, params.userAuthor),
       clientId,
       appVersion,
       clientCapabilities,
@@ -1712,6 +1736,7 @@ export class VoiceAssistantWebSocketServer {
 
   private createSocketSession(options: SocketSessionOptions): Session {
     return new Session({
+      userAuthor: options.userAuthor,
       connectedHosts: this.connectedHosts,
       getConnectedHostBufferedAmount: () => {
         let total = 0;
@@ -1904,7 +1929,7 @@ export class VoiceAssistantWebSocketServer {
     if (message.appVersion) {
       pending.identity.appVersion = message.appVersion;
     }
-    const sessionKey = sessionConnectionKey(admitted.principalId, clientId);
+    const sessionKey = sessionConnectionKey(admitted.principalId, clientId, pending.userAuthor);
     const existing = pluginId ? undefined : this.externalSessionsByKey.get(sessionKey);
     if (existing) {
       this.resumeSession({ ws, message, pending, existing });
@@ -1921,6 +1946,7 @@ export class VoiceAssistantWebSocketServer {
       connectionLogger,
       lifecycle: pluginId ? { kind: "ephemeral-plugin", pluginId } : { kind: "reconnectable" },
       admission: admitted,
+      userAuthor: pending.userAuthor,
     });
     connection.permissionCeiling = message.sessionPermissions;
     connection.session.setRouted(message.routed === true);
@@ -2096,6 +2122,10 @@ export class VoiceAssistantWebSocketServer {
     const machineKind = getCachedHostMachineKind();
     return {
       status: "server_info",
+      userAuthor: userAuthorWithAvatar(
+        session.getUserAuthor(),
+        this.daemonConfigStore.get().userAvatarUrl,
+      ),
       protocolVersion: WS_PROTOCOL_VERSION,
       serverId: this.serverId,
       hostname: getHostName(),
@@ -2193,6 +2223,7 @@ export class VoiceAssistantWebSocketServer {
         skillManagement: true,
         // COMPAT(idleRuntimeCleanupSetting): added in v0.13.0, remove gate after 2027-04-26.
         idleRuntimeCleanupSetting: true,
+        userAvatarSettings: true,
         resumeOnStartupSetting: true,
         // COMPAT(terminalRestoreModes): added in v0.1.81, remove gate after 2026-11-23.
         "terminal-restore-modes": true,
@@ -3236,8 +3267,12 @@ function createWebSocketConnectionIdentity(
   };
 }
 
-function sessionConnectionKey(principalId: string, clientId: string): string {
-  return JSON.stringify([principalId, clientId]);
+function sessionConnectionKey(
+  principalId: string,
+  clientId: string,
+  author?: UserMessageAuthor,
+): string {
+  return JSON.stringify([principalId, clientId, author?.username]);
 }
 
 function toConnectionLogFields(identity: WebSocketConnectionIdentity): Record<string, string> {

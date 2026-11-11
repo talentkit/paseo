@@ -21,6 +21,7 @@ import {
   type TerminalActivity,
 } from "@getpaseo/protocol/terminal-activity";
 import type { ProviderSubagentDescriptor } from "./agent/provider-subagents/store.js";
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 
 const FETCH_WORKSPACES_SORT_KEYS = [
   "status_priority",
@@ -28,6 +29,15 @@ const FETCH_WORKSPACES_SORT_KEYS = [
   "name",
   "project_id",
 ] as const;
+
+/** Enough heads for any sidebar stack; the tail of a long participant list is not shown. */
+const MAX_WORKSPACE_PARTICIPANTS = 4;
+
+function promptTime(value: string | null | undefined): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 /**
  * Per-workspace bucket history. Drives the priority-unmasking semantic for
@@ -276,6 +286,10 @@ export class WorkspaceDirectory {
       activeAgents,
       descriptorsByWorkspaceId,
     });
+    this.applyAgentParticipantContributions({
+      activeAgents,
+      descriptorsByWorkspaceId,
+    });
 
     // Terminal activity contributions: working terminal → running bucket.
     const activityEntriesByWorkspaceId = this.applyTerminalContributions(
@@ -407,6 +421,50 @@ export class WorkspaceDirectory {
       ) {
         existing.status = bucket;
       }
+    }
+  }
+
+  /**
+   * The humans who have prompted a workspace's agents, most recent first.
+   *
+   * Attribution is recorded per agent at submission, so this is a union rather than a
+   * second source of truth: an agent owns the names, the workspace inherits them. Agents
+   * contribute in prompt-recency order so the person who spoke last leads the stack, and
+   * a name already claimed by a more recent agent is not repeated.
+   */
+  private applyAgentParticipantContributions(params: {
+    activeAgents: AgentSnapshotPayload[];
+    descriptorsByWorkspaceId: Map<string, WorkspaceDescriptorPayload>;
+  }): void {
+    const { activeAgents, descriptorsByWorkspaceId } = params;
+    const activeAgentsById = new Map(activeAgents.map((agent) => [agent.id, agent] as const));
+    const promptedFirst = [...activeAgents].sort(
+      (left, right) => promptTime(right.lastUserMessageAt) - promptTime(left.lastUserMessageAt),
+    );
+
+    const participantsByWorkspaceId = new Map<string, UserMessageAuthor[]>();
+    const seenByWorkspaceId = new Map<string, Set<string>>();
+    for (const agent of promptedFirst) {
+      if (!agent.participants?.length) continue;
+      const workspaceAgent = resolveWorkspaceRootAgent(agent, activeAgentsById);
+      const workspaceId = workspaceAgent?.workspaceId;
+      if (!workspaceId || !descriptorsByWorkspaceId.has(workspaceId)) continue;
+
+      const seen = seenByWorkspaceId.get(workspaceId) ?? new Set<string>();
+      const participants = participantsByWorkspaceId.get(workspaceId) ?? [];
+      for (const participant of agent.participants) {
+        if (seen.has(participant.username)) continue;
+        seen.add(participant.username);
+        participants.push(participant);
+      }
+      seenByWorkspaceId.set(workspaceId, seen);
+      participantsByWorkspaceId.set(workspaceId, participants);
+    }
+
+    for (const [workspaceId, participants] of participantsByWorkspaceId) {
+      const descriptor = descriptorsByWorkspaceId.get(workspaceId);
+      if (!descriptor) continue;
+      descriptor.participants = participants.slice(0, MAX_WORKSPACE_PARTICIPANTS);
     }
   }
 

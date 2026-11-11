@@ -33,6 +33,21 @@ function pendingAttempt(overrides: Partial<PendingCreateAttempt> = {}): PendingC
 }
 
 describe("resolveDraftTimeline", () => {
+  it("shows the authenticated author before agent creation finishes", () => {
+    const author = { username: "panta", avatarUrl: "https://images.example.com/panta.png" };
+    const timeline = resolveDraftTimeline({
+      pending: pendingAttempt(),
+      serverId: "server-1",
+      tabId: "tab-1",
+      cwd: "/repo",
+      author,
+    });
+
+    expect(timeline?.streamItems).toEqual([
+      expect.objectContaining({ kind: "user_message", author }),
+    ]);
+  });
+
   it("shows the sent prompt pending with the turn working", () => {
     const timeline = resolveDraftTimeline({
       pending: pendingAttempt(),

@@ -15,6 +15,18 @@
         "listen": {
           "type": "string"
         },
+        "userAvatarUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": ""
+            },
+            {
+              "type": "string",
+              "format": "uri"
+            }
+          ]
+        },
         "hostnames": {
           "anyOf": [
             {
