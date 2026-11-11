@@ -1279,6 +1279,7 @@ export const es: TranslationResources = {
         checks: "Comprobaciones",
         services: "Servicios",
         labels: "Etiquetas",
+        participants: "Participantes",
         diff: "Estadísticas de cambios",
         timestamp: "Última actividad",
       },
@@ -2811,6 +2812,15 @@ export const es: TranslationResources = {
       },
     },
     host: {
+      userAvatars: {
+        initials: "Iniciales",
+        edit: "Editar patrón de URL del avatar",
+        title: "Avatares de mensajes",
+        url: "Patrón de URL del avatar",
+        info: "Usa {username} en una URL de imagen HTTP o HTTPS. Déjalo vacío para mostrar las iniciales.",
+        invalidUrl: "Introduce una URL HTTP o HTTPS, o déjalo vacío para usar iniciales.",
+        saved: "Configuración de avatares guardada",
+      },
       password: {
         guidance: "Elimina este host y vuelve a añadirlo con la contraseña que pide este daemon.",
       },

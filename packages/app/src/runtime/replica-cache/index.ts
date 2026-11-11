@@ -1,3 +1,4 @@
+import { UserMessageAuthorSchema } from "@getpaseo/protocol/user-message-author";
 import { findMountedWindowStart } from "@/agent-stream/history-window";
 import { z } from "zod";
 import {
@@ -121,6 +122,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     ...TimelineItemBaseShape,
     kind: z.literal("user_message"),
+    author: UserMessageAuthorSchema.optional(),
     clientMessageId: z.string().optional(),
     messageId: z.string().optional(),
     text: z.string(),
@@ -328,6 +330,9 @@ const StoredWorkspaceSchema = z.strictObject({
   // dropped them painted its row without its chips and stayed that way: the directory cursor is
   // current on reconnect, so the daemon has nothing newer to send back.
   labels: z.array(z.string()).optional(),
+  // Required for the same reason as `links`: a row cached before participants existed would
+  // paint no faces and never recover, because its cursor is current on reconnect.
+  participants: z.array(UserMessageAuthorSchema),
   status: z.enum(["needs_input", "failed", "running", "attention", "done"]),
   statusEnteredAt: IsoDateSchema.nullable(),
   activityAt: z.null(),
@@ -471,6 +476,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
     case "user_message":
       return {
         ...base,
+        ...(item.author ? { author: item.author } : {}),
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
@@ -564,6 +570,7 @@ function deserializeBuiltinTimelineItem(
     case "user_message":
       return {
         ...base,
+        ...(item.author ? { author: item.author } : {}),
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
@@ -753,6 +760,7 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
     title: workspace.title ?? null,
     pinnedAt: workspace.pinnedAt ?? null,
     labels: workspace.labels,
+    participants: workspace.participants ?? [],
     status: workspace.status,
     statusEnteredAt: workspace.statusEnteredAt?.toISOString() ?? null,
     activityAt: null,

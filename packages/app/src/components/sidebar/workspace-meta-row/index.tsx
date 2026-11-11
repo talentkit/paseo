@@ -78,6 +78,7 @@ export function WorkspaceMetaRow({
   labels = EMPTY_LABELS,
   workspace = null,
   backdrop,
+  trailing = null,
 }: {
   currentBranch: string | null;
   projectName: string | null;
@@ -88,6 +89,11 @@ export function WorkspaceMetaRow({
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
   workspace?: { serverId: string; workspaceId: string } | null;
   backdrop: SidebarSurfaceBackdrop;
+  /**
+   * Content the row hangs at the end of this line instead of the title's. The caller decides
+   * that; this line only has to leave room for it and shrink its own items first.
+   */
+  trailing?: ReactNode;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
@@ -106,25 +112,28 @@ export function WorkspaceMetaRow({
 
   return (
     <View style={styles.row}>
-      {items.map((item, index) => (
-        <Fragment key={item.kind}>
-          {index > 0 ? (
-            <Text
-              style={[
-                styles.separator,
-                backdrop === "surfaceSidebarHover" && styles.separatorHovered,
-                backdrop === "surfaceSidebarSelected" && styles.separatorSelected,
-              ]}
-            >
-              ·
-            </Text>
-          ) : null}
-          <MetaItemNode item={item} hostBadge={hostBadge} leading={index === 0} />
-        </Fragment>
-      ))}
-      {workspace ? (
-        <PluginWorkspaceRowBadgeItems targets={pluginItems} workspaceId={workspace.workspaceId} />
-      ) : null}
+      <View style={styles.items}>
+        {items.map((item, index) => (
+          <Fragment key={item.kind}>
+            {index > 0 ? (
+              <Text
+                style={[
+                  styles.separator,
+                  backdrop === "surfaceSidebarHover" && styles.separatorHovered,
+                  backdrop === "surfaceSidebarSelected" && styles.separatorSelected,
+                ]}
+              >
+                ·
+              </Text>
+            ) : null}
+            <MetaItemNode item={item} hostBadge={hostBadge} leading={index === 0} />
+          </Fragment>
+        ))}
+        {workspace ? (
+          <PluginWorkspaceRowBadgeItems targets={pluginItems} workspaceId={workspace.workspaceId} />
+        ) : null}
+      </View>
+      {trailing}
     </View>
   );
 }
@@ -343,6 +352,16 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[1.5],
     minWidth: 0,
+  },
+  // Takes the line's free width so trailing content lands on the row's right rail, and gives it
+  // back first when the line runs out: the facts are what the line is for, the trailing slot is
+  // the row's decoration.
+  items: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1.5],
+    minWidth: 0,
+    flex: 1,
   },
   item: {
     flexDirection: "row",

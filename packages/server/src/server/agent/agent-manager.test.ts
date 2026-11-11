@@ -1408,14 +1408,17 @@ test("a steer the provider names without echoing it can be rewound to", async ()
     await manager.waitForAgentRunStart(agent.id);
 
     await expect(
-      manager.steerAgentRun(agent.id, "steered", { clientMessageId: "steer-client" }),
+      manager.steerAgentRun(agent.id, "steered", {
+        clientMessageId: "steer-client",
+        author: { username: "panta" },
+      }),
     ).resolves.toMatchObject({ status: "accepted" });
     const row = manager
       .fetchTimeline(agent.id, { limit: 0 })
       .rows.find((candidate) => candidate.item.type === "user_message");
     expect(row).toMatchObject({
       providerMessageId: "provider-steer-client",
-      item: { text: "steered", clientMessageId: "steer-client" },
+      item: { text: "steered", clientMessageId: "steer-client", author: { username: "panta" } },
     });
 
     await manager.rewind(agent.id, "steer-client", "files");
@@ -6464,6 +6467,126 @@ test("archiveAgent does not cascade to a detached former child", async () => {
 
   expect((await storage.get(parent.id))?.archivedAt).toEqual(expect.any(String));
   expect((await storage.get(child.id))?.archivedAt).toBeFalsy();
+});
+
+test("prompt authors survive fresh storage and provider history replay", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-authors-"));
+  const storagePath = join(workdir, "agents");
+  const history: AgentStreamEvent[] = [];
+  class AuthorHistorySession extends TestAgentSession {
+    override async startTurn(_prompt?: AgentPromptInput, options?: AgentRunOptions) {
+      const started = await super.startTurn();
+      const item = { type: "user_message" as const, text: "Same prompt", messageId: randomUUID() };
+      history.push({ type: "timeline", provider: this.provider, item });
+      this.pushEvent({
+        type: "timeline",
+        provider: this.provider,
+        turnId: started.turnId,
+        item: { ...item, clientMessageId: options?.clientMessageId },
+      });
+      return started;
+    }
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      yield* history;
+    }
+  }
+  class AuthorHistoryClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig) {
+      return new AuthorHistorySession(config);
+    }
+    override async resumeSession() {
+      return new AuthorHistorySession({ provider: "codex", cwd: workdir });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new AuthorHistoryClient() },
+    registry: new AgentStorage(storagePath, logger),
+    logger,
+  });
+  let resumed: AgentManager | undefined;
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    for (const username of ["panta", "ivana"]) {
+      await manager.runAgent(agent.id, "Same prompt", {
+        clientMessageId: username,
+        author: { username },
+      });
+    }
+    await manager.closeAgent(agent.id);
+    await manager.flush();
+    const storage = new AgentStorage(storagePath, logger);
+    const stored = await storage.get(agent.id);
+    expect(stored?.userMessageAuthors?.["client:panta"]).toEqual({ username: "panta" });
+    expect(stored?.userMessageAuthors?.["client:ivana"]).toEqual({ username: "ivana" });
+    expect(stored?.participants).toEqual([{ username: "ivana" }, { username: "panta" }]);
+    expect(stored?.persistence).toBeTruthy();
+    if (!stored?.persistence) throw new Error("Missing provider persistence handle");
+    history.push({
+      type: "timeline",
+      provider: "codex",
+      item: { type: "user_message", text: "Same prompt", messageId: "unattributed" },
+    });
+    resumed = new AgentManager({
+      clients: { codex: new AuthorHistoryClient() },
+      registry: storage,
+      logger,
+    });
+    await resumed.resumeAgentFromPersistence(stored.persistence, { cwd: workdir }, agent.id);
+    const resumedAgent = resumed.getAgent(agent.id);
+    if (!resumedAgent) throw new Error("Resumed agent was not registered");
+    expect(toAgentPayload(resumedAgent).participants).toEqual([
+      { username: "ivana" },
+      { username: "panta" },
+    ]);
+    await resumed.hydrateTimelineFromProvider(agent.id);
+    expect(
+      resumed
+        .getTimeline(agent.id)
+        .map((item) => (item.type === "user_message" ? item.author : null)),
+    ).toEqual([{ username: "panta" }, { username: "ivana" }, undefined]);
+    await resumed.closeAgent(agent.id);
+  } finally {
+    await manager.flush();
+    await resumed?.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("keeps each person once, most recent prompt first, as an agent's participants", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-participants-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+  });
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    for (const [index, username] of ["panta", "ivana", "panta"].entries()) {
+      await manager.runAgent(agent.id, `Prompt from ${username}`, {
+        clientMessageId: `prompt-${index}`,
+        author: { username },
+      });
+    }
+    const current = manager.getAgent(agent.id);
+    if (!current) throw new Error("Agent was not registered");
+    expect(toAgentPayload(current).participants).toEqual([
+      { username: "panta" },
+      { username: "ivana" },
+    ]);
+
+    await manager.closeAgent(agent.id);
+    await manager.flush();
+    const stored = await new AgentStorage(join(workdir, "agents"), logger).get(agent.id);
+    expect(stored?.participants).toEqual([{ username: "panta" }, { username: "ivana" }]);
+  } finally {
+    await manager.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("runAgent persists finished attention and idle status without an external snapshot subscriber", async () => {

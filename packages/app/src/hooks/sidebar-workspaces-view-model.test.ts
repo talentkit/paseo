@@ -72,6 +72,26 @@ describe("createSidebarWorkspaceEntry forge threading", () => {
   });
 });
 
+describe("createSidebarWorkspaceEntry prompt participants", () => {
+  it("threads the people who prompted the workspace, most recent first", () => {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+    descriptor.participants = [{ username: "panta" }, { username: "ivana" }];
+
+    const entry = createSidebarWorkspaceEntry({ serverId: "srv", workspace: descriptor });
+
+    expect(entry.participants).toEqual([{ username: "panta" }, { username: "ivana" }]);
+  });
+
+  it("keeps an empty list when no prompt was attributed (old daemon or local only)", () => {
+    const entry = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42"),
+    });
+
+    expect(entry.participants).toEqual([]);
+  });
+});
+
 describe("createSidebarWorkspaceEntry workspace directory label", () => {
   it("uses the daemon-provided slug for a Paseo-owned worktree", () => {
     const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");

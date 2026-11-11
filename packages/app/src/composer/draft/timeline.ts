@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
+import type { UserMessageAuthor } from "@getpaseo/protocol/user-message-author";
 import type { PendingMessageSubmission } from "@/composer/submission/model";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { type PendingCreateAttempt, useCreateFlowStore } from "@/stores/create-flow-store";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useSessionStore } from "@/stores/session-store";
 import {
   resolveTurnPresentation,
   TURN_LIVENESS_IDLE,
@@ -48,6 +50,7 @@ export function resolveDraftTimeline(input: {
   serverId: string;
   tabId: string;
   cwd: string | null;
+  author?: UserMessageAuthor;
 }): DraftTimeline | null {
   const { pending, serverId, tabId, cwd } = input;
   if (!pending || pending.serverId !== serverId || pending.lifecycle === "abandoned" || !cwd) {
@@ -62,6 +65,7 @@ export function resolveDraftTimeline(input: {
     streamItems: hasContent
       ? [
           createUserMessage({
+            author: input.author,
             clientMessageId: pending.clientMessageId,
             text: pending.text,
             timestamp: new Date(pending.timestamp),
@@ -80,6 +84,7 @@ export function useDraftTimeline(input: {
   draft: DraftConversation | null;
 }): DraftTimeline | null {
   const { serverId, draft } = input;
+  const author = useSessionStore((state) => state.sessions[serverId]?.serverInfo?.userAuthor);
   const pending = useCreateFlowStore((state) =>
     draft ? state.pendingByDraftId[draft.draftId] : undefined,
   );
@@ -96,7 +101,7 @@ export function useDraftTimeline(input: {
     : null;
   const tabId = draft?.tabId ?? "";
   return useMemo(
-    () => resolveDraftTimeline({ pending, serverId, tabId, cwd }),
-    [cwd, pending, serverId, tabId],
+    () => resolveDraftTimeline({ pending, serverId, tabId, cwd, author }),
+    [author, cwd, pending, serverId, tabId],
   );
 }

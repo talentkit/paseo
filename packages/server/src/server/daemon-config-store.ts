@@ -17,6 +17,7 @@ import {
   MutableDaemonConfigPatchSchema,
 } from "@getpaseo/protocol/messages";
 import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
+import { UserAvatarUrlSchema } from "@getpaseo/protocol/user-message-author";
 import type { SpeechSettingsPatch } from "@getpaseo/protocol/speech/rpc-schemas";
 import { mergeSpeechSettingsPatch, type SpeechSettingsOwner } from "./speech/speech-settings.js";
 
@@ -40,6 +41,7 @@ interface SupportedMutableConfigPatch {
   resumeOnStartup?: boolean;
   resumePrompt?: string;
   appendSystemPrompt?: string;
+  userAvatarUrl?: string;
   terminalProfiles?: MutableDaemonConfig["terminalProfiles"];
   agentProfiles?: MutableDaemonConfig["agentProfiles"];
   skills?: MutableDaemonConfig["skills"];
@@ -248,6 +250,7 @@ const RELOADABLE_PATHS = [
   "daemon.autoArchiveAfterMerge",
   "daemon.enableTerminalAgentHooks",
   "daemon.appendSystemPrompt",
+  "daemon.userAvatarUrl",
   "daemon.terminalProfiles",
   "daemon.agentProfiles",
   "app.baseUrl",
@@ -276,6 +279,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.autoArchiveAfterMerge", "autoArchiveAfterMerge"],
   ["daemon.enableTerminalAgentHooks", "enableTerminalAgentHooks"],
   ["daemon.appendSystemPrompt", "appendSystemPrompt"],
+  ["daemon.userAvatarUrl", "userAvatarUrl"],
   ["daemon.terminalProfiles", "terminalProfiles"],
   ["daemon.agentProfiles", "agentProfiles"],
   ["app.baseUrl", "app.baseUrl"],
@@ -338,6 +342,7 @@ function pickRelayPatch(
 
 function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
   return {
+    userAvatarUrl: UserAvatarUrlSchema.optional().parse(patch.userAvatarUrl),
     ...pickRelayPatch(patch.relay),
     usage: patch.usage,
     ...(patch.mcp?.injectIntoAgents !== undefined
@@ -863,6 +868,7 @@ function mergeMutableDaemonPatch(
     next.enableTerminalAgentHooks = patch.enableTerminalAgentHooks;
   }
   if (patch.appendSystemPrompt !== undefined) next.appendSystemPrompt = patch.appendSystemPrompt;
+  if (patch.userAvatarUrl !== undefined) next.userAvatarUrl = patch.userAvatarUrl;
   if (patch.terminalProfiles !== undefined) next.terminalProfiles = patch.terminalProfiles;
   if (patch.agentProfiles !== undefined) next.agentProfiles = patch.agentProfiles;
   return Object.keys(next).length > 0 ? next : undefined;

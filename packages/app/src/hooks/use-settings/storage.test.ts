@@ -808,6 +808,29 @@ describe("saveAppSettings", () => {
 
     expect((await loadAppSettingsFromStorage(deps)).sidebarRowItems).toEqual(sidebarRowItems);
   });
+
+  it("persists prompt participant heads being switched off", async () => {
+    const deps = makeDeps();
+    const queryClient = new QueryClient();
+
+    await saveAppSettings({
+      queryClient,
+      updates: { sidebarParticipantHeads: false },
+      deps,
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).sidebarParticipantHeads).toBe(false);
+  });
+
+  it("shows prompt participant heads for a blob written before the toggle existed", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ theme: "dark" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).sidebarParticipantHeads).toBe(true);
+  });
 });
 
 describe("parseTerminalScrollbackLines", () => {

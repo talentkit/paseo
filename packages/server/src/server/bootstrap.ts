@@ -410,6 +410,8 @@ export type DaemonLifecycleIntent =
     };
 
 export interface PaseoDaemonConfig {
+  userIdentityProxySecret?: string;
+  userAvatarUrl?: string;
   listen: string;
   paseoHome: string;
   daemonVersion?: string;
@@ -604,6 +606,7 @@ function createInitialMutableDaemonConfig(config: ResolvedDaemonSettings): Mutab
     resumeOnStartup: config.resumeOnStartup === true,
     resumePrompt: config.resumePrompt ?? "Resume working.",
     appendSystemPrompt: config.appendSystemPrompt ?? "",
+    userAvatarUrl: config.userAvatarUrl,
     pluginsEnabled: config.pluginsEnabled ?? false,
     plugins: config.plugins ?? {},
     skills: { selection: config.skillSelection },
@@ -1912,6 +1915,7 @@ export async function createPaseoDaemon(
               {
                 getAllowedOrigins: () => allowedOrigins,
                 getHostnames: () => configuredHostnames,
+                userIdentityProxySecret: config.userIdentityProxySecret,
                 daemonStatusRpc: dependencies.serverFeatureOverrides?.daemonStatusRpc,
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
                 startPaused: true,

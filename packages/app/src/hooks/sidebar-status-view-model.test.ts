@@ -35,6 +35,7 @@ function ws(
     scripts: [],
     hasRunningScripts: false,
     workspaceKey: input.workspaceKey,
+    participants: [],
   };
 }
 

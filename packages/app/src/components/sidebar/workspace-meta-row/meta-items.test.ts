@@ -3,7 +3,7 @@ import type { WorkspaceLabelDefinition } from "@getpaseo/protocol/workspace-labe
 import type { PrHint } from "@/git/pr-hint";
 import { DEFAULT_SIDEBAR_CHECKS_DISPLAY } from "@/components/sidebar/display-preferences/checks-display";
 import { DEFAULT_SIDEBAR_ROW_ITEMS } from "@/components/sidebar/display-preferences/row-items";
-import { selectMetaRowItems } from "./meta-items";
+import { selectMetaRowItems, showsProjectOnMetaRow } from "./meta-items";
 import type { WorkspaceServiceSummary } from "./service-summary";
 
 const PR_HINT: PrHint = {
@@ -33,6 +33,17 @@ function select(overrides: Partial<Parameters<typeof selectMetaRowItems>[0]> = {
 }
 
 const kinds = (items: ReturnType<typeof selectMetaRowItems>) => items.map((item) => item.kind);
+
+describe("showsProjectOnMetaRow", () => {
+  it("is true only when the row has a project to name and the item is switched on", () => {
+    const visible = { ...DEFAULT_SIDEBAR_ROW_ITEMS, project: true };
+    expect(showsProjectOnMetaRow({ projectName: "Paseo", visible })).toBe(true);
+    expect(
+      showsProjectOnMetaRow({ projectName: "Paseo", visible: DEFAULT_SIDEBAR_ROW_ITEMS }),
+    ).toBe(false);
+    expect(showsProjectOnMetaRow({ projectName: null, visible })).toBe(false);
+  });
+});
 
 describe("selectMetaRowItems", () => {
   it("puts the enabled branch and project badges first", () => {

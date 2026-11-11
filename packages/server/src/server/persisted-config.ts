@@ -21,6 +21,8 @@ import { PluginIdSchema, PluginSourceSchema } from "@getpaseo/protocol/plugin-co
 import { TerminalProfileSchema } from "@getpaseo/protocol/terminal-profile";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
 
+import { UserAvatarUrlSchema } from "@getpaseo/protocol/user-message-author";
+
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
 
@@ -244,6 +246,7 @@ export const PersistedConfigSchema = z
     daemon: z
       .object({
         listen: z.string().optional(),
+        userAvatarUrl: UserAvatarUrlSchema.optional(),
         hostnames: z.union([z.literal(true), z.array(z.string())]).optional(),
         allowedHosts: z.union([z.literal(true), z.array(z.string())]).optional(),
         trustedProxies: z

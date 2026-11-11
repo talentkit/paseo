@@ -25,6 +25,21 @@ export type MetaRowItem =
   | { kind: "labels"; labels: readonly WorkspaceLabelDefinition[] };
 
 /**
+ * Whether this line leads with the project.
+ *
+ * The project is the one item that gives the line a second rail: a workspace whose project is
+ * named here hangs its trailing content on this line rather than on the title's. The workspace
+ * row asks this before deciding where that content goes, and the selector asks it before adding
+ * the item, so the two cannot disagree about whether the line leads with the project.
+ */
+export function showsProjectOnMetaRow(input: {
+  projectName: string | null;
+  visible: SidebarRowItems;
+}): boolean {
+  return Boolean(input.projectName && input.visible.project);
+}
+
+/**
  * Which peers a row should draw, given what it knows and what the user left switched on.
  *
  * Kept out of the component because this — not the markup — is the part with rules in it: every
@@ -55,11 +70,12 @@ export function selectMetaRowItems(input: {
     checksDisplay,
   } = input;
   const items: MetaRowItem[] = [];
+  const projectOnLine = showsProjectOnMetaRow({ projectName, visible });
 
   if (currentBranch && visible.branch) {
     items.push({ kind: "branch", name: currentBranch });
   }
-  if (projectName && visible.project) {
+  if (projectOnLine && projectName) {
     items.push({ kind: "project", name: projectName });
   }
   if (hasHostBadge) {

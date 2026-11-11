@@ -252,6 +252,11 @@ class WorkspaceStatus {
     });
   }
 
+  async workspaceParticipants(): Promise<WorkspaceDescriptorPayload["participants"]> {
+    const descriptor = await this.workspaceDescriptor();
+    return descriptor.participants;
+  }
+
   async workspaceDescriptor(): Promise<WorkspaceDescriptorPayload> {
     const entries = await this.directory.listFetchEntries({
       type: "fetch_workspaces_request",
@@ -275,6 +280,7 @@ interface AgentState {
   attentionReason?: AgentSnapshotPayload["attentionReason"];
   backgroundWork?: AgentSnapshotPayload["backgroundWork"];
   background?: boolean;
+  participants?: AgentSnapshotPayload["participants"];
 }
 
 function createAgent(
@@ -318,6 +324,7 @@ function createAgent(
     },
     title: null,
     labels: input.labels ?? {},
+    ...(input.participants ? { participants: input.participants } : {}),
     requiresAttention: input.requiresAttention ?? false,
     attentionReason: input.attentionReason ?? null,
     attentionTimestamp: null,
@@ -614,6 +621,35 @@ describe("WorkspaceDirectory", () => {
     expect(descriptor.status).toBe("running");
     // terminal timestamp (2027) is newer than agent updatedAt (NOW = 2026-03-01)
     expect(descriptor.statusEnteredAt).toBe("2027-01-01T00:00:00.000Z");
+  });
+
+  test("collects distinct prompt authors across the workspace's agents, most recent first", async () => {
+    const workspace = new WorkspaceStatus();
+    workspace.hasRootAgent({
+      id: "older-agent",
+      status: "idle",
+      lastUserMessageAt: "2026-04-01T09:00:00.000Z",
+      participants: [{ username: "panta" }],
+    });
+    workspace.hasStampedRootAgent({
+      id: "newer-agent",
+      workspaceId: "workspace-1",
+      status: "idle",
+      lastUserMessageAt: "2026-04-01T11:00:00.000Z",
+      participants: [{ username: "ivana" }, { username: "panta" }],
+    });
+
+    await expect(workspace.workspaceParticipants()).resolves.toEqual([
+      { username: "ivana" },
+      { username: "panta" },
+    ]);
+  });
+
+  test("a workspace whose prompts were never attributed has no participants", async () => {
+    const workspace = new WorkspaceStatus();
+    workspace.hasRootAgent({ id: "anonymous-agent", status: "idle" });
+
+    await expect(workspace.workspaceParticipants()).resolves.toBeUndefined();
   });
 });
 

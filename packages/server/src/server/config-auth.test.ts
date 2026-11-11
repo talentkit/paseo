@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { loadConfig } from "./config.js";
 import { isBearerTokenValidAsync } from "./auth.js";
+import { readProxyUser, userAuthorWithAvatar } from "./user-identity.js";
 
 const roots: string[] = [];
 const CONFIG_PASSWORD_HASH = "$2b$12$OLxyuuP9uLK30Uzc4wQX0O6liuU/Q1t5P2b0Ebf36mULvpVK3DRZW";
@@ -19,6 +20,34 @@ async function createPaseoHome(config: unknown): Promise<string> {
 }
 
 describe("daemon auth config", () => {
+  test("only accepts attributed users with the configured proxy secret", () => {
+    const headers = { "x-paseo-user": "panta", "x-paseo-proxy-secret": "proxy-secret" };
+    expect(readProxyUser(headers, "proxy-secret")).toEqual({ username: "panta" });
+    expect(readProxyUser(headers, undefined)).toBeUndefined();
+    expect(readProxyUser(headers, "wrong-secret")).toBeUndefined();
+    expect(readProxyUser({ "x-paseo-user": "panta" }, "proxy-secret")).toBeUndefined();
+    expect(
+      readProxyUser({ ...headers, "x-paseo-user": "../panta" }, "proxy-secret"),
+    ).toBeUndefined();
+    expect(
+      userAuthorWithAvatar({ username: "panta" }, "https://images.example.com/{username}.png"),
+    ).toEqual({ username: "panta", avatarUrl: "https://images.example.com/panta.png" });
+  });
+  test("loads proxy identity and avatar configuration without changing daemon auth", async () => {
+    const paseoHome = await createPaseoHome({
+      daemon: { userAvatarUrl: "https://images.example.com/{username}.png" },
+    });
+    const config = loadConfig(paseoHome, {
+      env: {
+        PASEO_USER_IDENTITY_PROXY_SECRET: "test-proxy-secret",
+        PASEO_USER_AVATAR_URL: "https://ignored.example.com/{username}.png",
+      },
+    });
+    expect(config.userIdentityProxySecret).toBe("test-proxy-secret");
+    expect(config.userAvatarUrl).toBe("https://images.example.com/{username}.png");
+    expect(config.auth).toBeUndefined();
+  });
+
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });

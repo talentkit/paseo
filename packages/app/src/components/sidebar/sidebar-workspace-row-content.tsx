@@ -8,6 +8,8 @@ import {
   WorkspaceMetaRow,
   type WorkspaceServiceSummary,
 } from "@/components/sidebar/workspace-meta-row";
+import { showsProjectOnMetaRow } from "@/components/sidebar/workspace-meta-row/meta-items";
+import { useSidebarMetaPreferences } from "@/components/sidebar/display-preferences/model";
 import { WorkspaceHoverCard } from "@/components/workspace-hover-card";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
@@ -27,6 +29,7 @@ import {
 } from "@/utils/status-indicator-geometry";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
+import { SidebarParticipantHeads } from "@/components/sidebar/sidebar-participant-heads";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SCRIM_WIDTH, TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
@@ -128,9 +131,24 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   children?: ReactNode;
 }) {
   const {
-    settings: { workspaceTitleSource },
+    settings: { workspaceTitleSource, sidebarParticipantHeads },
   } = useAppSettings();
+  const { rowItems } = useSidebarMetaPreferences();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  // A row whose second line leads with the project has room for the heads there, which gives
+  // the title its line back. Everywhere else they stay beside the title.
+  const headsOnMetaLine = showsProjectOnMetaRow({
+    projectName: leadingProjectName,
+    visible: rowItems,
+  });
+  const participantHeads = sidebarParticipantHeads ? (
+    <SidebarParticipantHeads
+      participants={workspace.participants}
+      backdrop={backdrop}
+      hidden={isHovered}
+      line={headsOnMetaLine ? "meta" : "title"}
+    />
+  ) : null;
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
@@ -177,7 +195,10 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
                 {workspaceLabel}
               </Text>
             )}
-            <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
+            <View style={sidebarWorkspaceRowStyles.rowRight}>
+              {headsOnMetaLine ? null : participantHeads}
+              {children}
+            </View>
           </View>
           <WorkspaceMetaRow
             backdrop={backdrop}
@@ -188,6 +209,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             serviceSummary={serviceSummary}
             labels={labels}
             workspace={workspace}
+            trailing={headsOnMetaLine ? participantHeads : null}
           />
         </View>
       </View>

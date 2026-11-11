@@ -39,6 +39,7 @@ function makeWorkspace(
     scripts: [],
     hasRunningScripts: false,
     labels,
+    participants: [],
   };
   return { placement, entry };
 }

@@ -32,6 +32,7 @@ function resolveDaemonWsUrl(port?: number): string {
 }
 
 export interface ConnectDaemonClientOptions {
+  headers?: Record<string, string>;
   clientIdPrefix: string;
   appVersion?: string;
   port?: number;
@@ -47,12 +48,17 @@ export async function connectDaemonClient<ClientInstance extends { connect(): Pr
   options: ConnectDaemonClientOptions,
 ): Promise<ClientInstance> {
   const DaemonClient = await loadDaemonClientConstructor<E2EDaemonClientConfig, ClientInstance>();
+  const factory = createNodeWebSocketFactory();
   const client = new DaemonClient({
     url: resolveDaemonWsUrl(options.port),
     clientId: `${options.clientIdPrefix}-${randomUUID()}`,
     clientType: "cli",
     appVersion: options.appVersion ?? loadAppVersion(),
-    webSocketFactory: createNodeWebSocketFactory(),
+    webSocketFactory: (url, transportOptions) =>
+      factory(url, {
+        ...transportOptions,
+        headers: { ...transportOptions?.headers, ...options.headers },
+      }),
     capabilities: options.capabilities,
   });
   await client.connect();
