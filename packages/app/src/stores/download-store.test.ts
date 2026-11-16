@@ -202,7 +202,9 @@ describe("download store transport selection", () => {
 
     expect(download).toMatchObject({ status: "complete" });
     expect(reader.requested).toEqual([]);
-    expect(saver.savedFiles).toEqual([]);
+    expect(saver.savedFiles).toEqual([
+      { bytes: FILE_BYTES, fileName: FILE_NAME, mimeType: MIME_TYPE },
+    ]);
   });
 
   it("fails with the HTTP status when a proxy in front of the host rejects the download", async () => {
@@ -223,7 +225,7 @@ describe("download store transport selection", () => {
       status: "error",
       message: i18n.t("downloads.httpFailed", { status: 401 }),
     });
-    expect(requests).toEqual([{ credentials: "include", redirect: "error" }]);
+    expect(requests).toEqual([{ credentials: "omit", redirect: "error" }]);
   });
 
   it("fails with a readable message when the download request cannot reach the host", async () => {
@@ -271,6 +273,30 @@ describe("download store transport selection", () => {
 
     expect(download).toMatchObject({ status: "error", message: "Connection lost" });
     expect(saver.savedFiles).toEqual([]);
+  });
+
+  it("reports a Basic auth challenge without saving the error page or requesting browser credentials", async () => {
+    const saver = createFileSaver();
+    const requests: Array<RequestInit | undefined> = [];
+    const download = await startDownload({
+      profile: profileWith([localTcpConnection]),
+      activeConnectionId: localTcpConnection.id,
+      saver,
+      fetchFile: async (_url, options) => {
+        requests.push(options);
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: { "WWW-Authenticate": 'Basic realm="Paseo"' },
+        });
+      },
+    });
+
+    expect(download).toMatchObject({
+      status: "error",
+      message: i18n.t("downloads.httpFailed", { status: 401 }),
+    });
+    expect(saver.savedFiles).toEqual([]);
+    expect(requests).toEqual([{ credentials: "omit", redirect: "error" }]);
   });
 
   it("refuses a file over the session size limit before reading it", async () => {

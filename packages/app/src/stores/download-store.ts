@@ -145,11 +145,15 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
         throw new Error(i18n.t("downloads.hostUnavailable"));
       }
 
-      const downloadUrl = buildDownloadUrl(downloadTarget.baseUrl, tokenResponse.token);
+      const downloadUrl = new URL("/api/files/download", downloadTarget.baseUrl);
+      downloadUrl.searchParams.set("token", tokenResponse.token);
+      const requestOptions = downloadTarget.authHeader
+        ? { headers: { Authorization: downloadTarget.authHeader } }
+        : undefined;
 
       if (isWeb) {
-        const file = await fetchDownload(fetchFile, downloadUrl);
-        saveBrowserFile(file, resolvedFileName);
+        const bytes = await fetchDownloadBytes(fetchFile, downloadUrl, requestOptions);
+        await saveFile({ bytes, fileName: resolvedFileName, mimeType: tokenResponse.mimeType });
         get().completeDownload(id);
         return;
       }
@@ -157,11 +161,9 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       const downloadStartTime = Date.now();
       const targetFile = resolveDownloadTargetFile(resolvedFileName);
       const downloadResumable = LegacyFileSystem.createDownloadResumable(
-        downloadUrl,
+        downloadUrl.toString(),
         targetFile.uri,
-        downloadTarget.authHeader
-          ? { headers: { Authorization: downloadTarget.authHeader } }
-          : undefined,
+        requestOptions,
         (data) => {
           const now = Date.now();
           const { totalBytesWritten, totalBytesExpectedToWrite } = data;
@@ -189,6 +191,10 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       const result = await downloadResumable.downloadAsync();
       if (!result) {
         throw new Error(i18n.t("downloads.cancelled"));
+      }
+      if (result.status !== 200) {
+        targetFile.delete();
+        throw new Error(i18n.t("downloads.httpFailed", { status: result.status }));
       }
 
       get().completeDownload(id);
@@ -327,24 +333,20 @@ function resolveDaemonDownloadTarget(
   return { baseUrl, authHeader };
 }
 
-function buildDownloadUrl(baseUrl: string, token: string): string {
-  const url = new URL("/api/files/download", baseUrl);
-  url.searchParams.set("token", token);
-  return url.toString();
-}
-
-/**
- * Fetches the file instead of navigating to it. The app runs on another origin than the host
- * (paseo://app on desktop), so a link to the download URL navigates the whole window, and any
- * response that is not the file (a proxy's 401 page, a 404) replaces the app.
- */
-async function fetchDownload(fetchFile: typeof fetch, url: string): Promise<Blob> {
+async function fetchDownloadBytes(
+  fetchFile: typeof fetch,
+  downloadUrl: URL,
+  requestOptions: RequestInit | undefined,
+): Promise<Uint8Array> {
   let response: Response;
   try {
-    // Send the same cookies the host's WebSocket handshake sends, so a proxy in front of the
-    // host lets the download through. Refuse redirects: a proxy that redirects to a login page
-    // would otherwise be saved as the file.
-    response = await fetchFile(url, { credentials: "include", redirect: "error" });
+    // The single-use token authorizes this request. Browser-managed credentials can
+    // open a modal Basic auth prompt that blocks the entire Electron window.
+    response = await fetchFile(downloadUrl, {
+      credentials: "omit",
+      redirect: "error",
+      ...requestOptions,
+    });
   } catch {
     throw new Error(i18n.t("downloads.failed"));
   }
@@ -352,8 +354,7 @@ async function fetchDownload(fetchFile: typeof fetch, url: string): Promise<Blob
     throw new Error(i18n.t("downloads.httpFailed", { status: response.status }));
   }
   try {
-    // The body streams after the headers, so the connection can still drop here.
-    return await response.blob();
+    return new Uint8Array(await response.arrayBuffer());
   } catch {
     throw new Error(i18n.t("downloads.failed"));
   }
@@ -371,7 +372,7 @@ async function saveDownloadedBytes({
   if (isWeb) {
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
-    saveBrowserFile(new Blob([buffer], { type: mimeType ?? "application/octet-stream" }), fileName);
+    saveBrowserBlob(new Blob([buffer], { type: mimeType ?? "application/octet-stream" }), fileName);
     return null;
   }
   // Resolve and write in one tick so two downloads of the same name cannot pick the same path.
@@ -395,12 +396,12 @@ async function shareSavedFile(
   }
 }
 
-function saveBrowserFile(file: Blob, fileName: string) {
-  if (typeof document === "undefined") {
+function saveBrowserBlob(blob: Blob, fileName: string) {
+  if (!isWeb) {
     return;
   }
 
-  const url = URL.createObjectURL(file);
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;

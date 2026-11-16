@@ -479,7 +479,7 @@ test("downloads a file over direct TCP with its original filename and bytes", as
   expect(await readFile(savedFile)).toEqual(source);
 });
 
-test("keeps the app open and shows the error when the host rejects a download", async ({
+test("keeps a failed download visible and the workspace usable until retry", async ({
   page,
 }, testInfo) => {
   const fileName = "removed-during-download.bin";
@@ -490,7 +490,7 @@ test("keeps the app open and shows the error when the host rejects a download", 
   await openFileExplorer(page);
   const workspaceUrl = page.url();
 
-  // The file disappears after the token is issued, so the real daemon answers 404.
+  // Remove the real file after token issuance, before the real HTTP request reaches the daemon.
   await page.route(
     "**/api/files/download?*",
     async (route) => {
@@ -504,11 +504,18 @@ test("keeps the app open and shows the error when the host rejects a download", 
     .getByText(fileName, { exact: true })
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Download", exact: true }).click();
-
-  await expect(
-    page.getByText("Failed to download file (HTTP 404).", { exact: true }),
-  ).toBeVisible();
+  const failure = page.getByText("Failed to download file (HTTP 404).", { exact: true });
+  await expect(failure).toBeVisible();
+  // Success toasts expire after three seconds; failures must remain actionable.
+  await page.waitForTimeout(3500);
+  await expect(failure).toBeVisible();
   expect(page.url()).toBe(workspaceUrl);
+  await page.screenshot({ path: testInfo.outputPath("download-failure.png"), scale: "css" });
+  await page
+    .getByTestId("download-toast")
+    .getByRole("button", { name: "Dismiss", exact: true })
+    .click();
+  await expect(failure).toBeHidden();
 
   await writeFile(filePath, source);
   const downloaded = await downloadFileFromExplorer(page, fileName);
