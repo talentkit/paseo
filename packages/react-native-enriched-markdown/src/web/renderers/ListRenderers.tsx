@@ -1,12 +1,7 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { extractNodeText } from '../utils';
-import type { RendererProps, RendererMap, ASTNode, NodeType } from '../types';
+import type { RendererProps, RendererMap } from '../types';
 import { listItemStyle, checkedTaskTextStyle } from '../styles';
-
-const NESTED_LIST_TYPES: Set<NodeType> = new Set([
-  'UnorderedList',
-  'OrderedList',
-]);
 
 function ListRenderer({
   node,
@@ -43,10 +38,6 @@ function OrderedListRenderer(props: RendererProps) {
   return <ListRenderer {...props} listTag="ol" />;
 }
 
-function isNestedList(child: ASTNode): boolean {
-  return NESTED_LIST_TYPES.has(child.type);
-}
-
 function ListItemRenderer({
   node,
   style,
@@ -81,43 +72,51 @@ function ListItemRenderer({
     });
   };
 
-  const hasNestedList = node.children?.some(isNestedList);
   const checkedStyle =
     isTask && isChecked ? checkedTaskTextStyle(style) : undefined;
-
-  const inlineNode: ASTNode = hasNestedList
-    ? {
-        ...node,
-        children: node.children?.filter((child) => !isNestedList(child)),
+  const checkbox = isTask ? (
+    <input
+      type="checkbox"
+      checked={isChecked}
+      onChange={handleChange}
+      readOnly={!capabilities.enableTaskListItemToggle}
+      aria-disabled={capabilities.enableTaskListItemToggle ? undefined : true}
+      style={
+        capabilities.enableTaskListItemToggle
+          ? styles.taskCheckbox
+          : styles.taskCheckboxDisabled
       }
-    : node;
-  const nestedNode: ASTNode | null = hasNestedList
-    ? { ...node, children: node.children?.filter(isNestedList) }
-    : null;
+      aria-label={`Task: ${taskText}`}
+    />
+  ) : null;
 
   return (
     <li style={listItemStyle(style, isTask, (index ?? 0) === 0)}>
-      <span style={checkedStyle}>
-        {isTask && (
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={handleChange}
-            readOnly={!capabilities.enableTaskListItemToggle}
-            aria-disabled={
-              capabilities.enableTaskListItemToggle ? undefined : true
-            }
-            style={
-              capabilities.enableTaskListItemToggle
-                ? styles.taskCheckbox
-                : styles.taskCheckboxDisabled
-            }
-            aria-label={`Task: ${taskText}`}
-          />
-        )}
-        {renderChildren(inlineNode)}
-      </span>
-      {nestedNode && renderChildren(nestedNode)}
+      {!node.children?.length && checkbox}
+      {node.children?.map((child, childIndex) => {
+        const leadingCheckbox = childIndex === 0 ? checkbox : null;
+        const isImageOnly =
+          child.children?.length === 1 && child.children[0]?.type === 'Image';
+        if (child.type !== 'Paragraph' || isImageOnly) {
+          return (
+            <Fragment key={childIndex}>
+              {leadingCheckbox}
+              {renderChildren({ ...node, children: [child] })}
+            </Fragment>
+          );
+        }
+        // Keep tight items compact; later paragraphs retain their block gap.
+        const paragraphStyle = {
+          marginTop: childIndex === 0 ? 0 : style.paragraph.marginBottom,
+          marginBottom: 0,
+        };
+        return (
+          <p key={childIndex} style={paragraphStyle}>
+            {leadingCheckbox}
+            <span style={checkedStyle}>{renderChildren(child)}</span>
+          </p>
+        );
+      })}
     </li>
   );
 }

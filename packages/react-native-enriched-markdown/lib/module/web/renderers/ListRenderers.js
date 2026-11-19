@@ -1,10 +1,7 @@
-"use strict";
-
-import { useState, useEffect } from 'react';
-import { extractNodeText } from "../utils.js";
-import { listItemStyle, checkedTaskTextStyle } from "../styles.js";
+import { Fragment, useState, useEffect } from 'react';
+import { extractNodeText } from '../utils.js';
+import { listItemStyle, checkedTaskTextStyle } from '../styles.js';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-const NESTED_LIST_TYPES = new Set(['UnorderedList', 'OrderedList']);
 function ListRenderer({
   node,
   styles,
@@ -32,9 +29,6 @@ function OrderedListRenderer(props) {
     ...props,
     listTag: "ol"
   });
-}
-function isNestedList(child) {
-  return NESTED_LIST_TYPES.has(child.type);
 }
 function ListItemRenderer({
   node,
@@ -64,30 +58,42 @@ function ListItemRenderer({
       text: taskText
     });
   };
-  const hasNestedList = node.children?.some(isNestedList);
   const checkedStyle = isTask && isChecked ? checkedTaskTextStyle(style) : undefined;
-  const inlineNode = hasNestedList ? {
-    ...node,
-    children: node.children?.filter(child => !isNestedList(child))
-  } : node;
-  const nestedNode = hasNestedList ? {
-    ...node,
-    children: node.children?.filter(isNestedList)
-  } : null;
+  const checkbox = isTask ? /*#__PURE__*/_jsx("input", {
+    type: "checkbox",
+    checked: isChecked,
+    onChange: handleChange,
+    readOnly: !capabilities.enableTaskListItemToggle,
+    "aria-disabled": capabilities.enableTaskListItemToggle ? undefined : true,
+    style: capabilities.enableTaskListItemToggle ? styles.taskCheckbox : styles.taskCheckboxDisabled,
+    "aria-label": `Task: ${taskText}`
+  }) : null;
   return /*#__PURE__*/_jsxs("li", {
     style: listItemStyle(style, isTask, (index ?? 0) === 0),
-    children: [/*#__PURE__*/_jsxs("span", {
-      style: checkedStyle,
-      children: [isTask && /*#__PURE__*/_jsx("input", {
-        type: "checkbox",
-        checked: isChecked,
-        onChange: handleChange,
-        readOnly: !capabilities.enableTaskListItemToggle,
-        "aria-disabled": capabilities.enableTaskListItemToggle ? undefined : true,
-        style: capabilities.enableTaskListItemToggle ? styles.taskCheckbox : styles.taskCheckboxDisabled,
-        "aria-label": `Task: ${taskText}`
-      }), renderChildren(inlineNode)]
-    }), nestedNode && renderChildren(nestedNode)]
+    children: [!node.children?.length && checkbox, node.children?.map((child, childIndex) => {
+      const leadingCheckbox = childIndex === 0 ? checkbox : null;
+      const isImageOnly = child.children?.length === 1 && child.children[0]?.type === 'Image';
+      if (child.type !== 'Paragraph' || isImageOnly) {
+        return /*#__PURE__*/_jsxs(Fragment, {
+          children: [leadingCheckbox, renderChildren({
+            ...node,
+            children: [child]
+          })]
+        }, childIndex);
+      }
+      // Keep tight items compact; later paragraphs retain their block gap.
+      const paragraphStyle = {
+        marginTop: childIndex === 0 ? 0 : style.paragraph.marginBottom,
+        marginBottom: 0
+      };
+      return /*#__PURE__*/_jsxs("p", {
+        style: paragraphStyle,
+        children: [leadingCheckbox, /*#__PURE__*/_jsx("span", {
+          style: checkedStyle,
+          children: renderChildren(child)
+        })]
+      }, childIndex);
+    })]
   });
 }
 export const listRenderers = {
@@ -95,4 +101,3 @@ export const listRenderers = {
   OrderedList: OrderedListRenderer,
   ListItem: ListItemRenderer
 };
-//# sourceMappingURL=ListRenderers.js.map
