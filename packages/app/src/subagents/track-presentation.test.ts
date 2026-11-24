@@ -194,12 +194,12 @@ describe("buildSubagentRowPresentationData", () => {
     );
   });
 
-  it("shows a child with background work as running after its foreground turn ends", () => {
+  it("shows a child as done when only background scripts remain", () => {
     expect(
       buildSubagentRowPresentationData(
         row({ id: "a", status: "idle", backgroundWork: { count: 1 } }),
       ).statusBucket,
-    ).toBe("running");
+    ).toBe("done");
   });
 
   it("shows an idle child with only passive background work as done", () => {

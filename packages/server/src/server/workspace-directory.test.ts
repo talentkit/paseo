@@ -334,7 +334,7 @@ function createAgent(
 }
 
 describe("WorkspaceDirectory", () => {
-  test("treats background work as running without changing foreground status", async () => {
+  test("preserves finished attention while background scripts are running", async () => {
     const workspace = new WorkspaceStatus();
     workspace.hasRootAgent({
       id: "root-agent",
@@ -343,11 +343,11 @@ describe("WorkspaceDirectory", () => {
       requiresAttention: true,
       attentionReason: "finished",
     });
-    await expect(workspace.workspaceStatus()).resolves.toBe("running");
+    await expect(workspace.workspaceStatus()).resolves.toBe("attention");
   });
-  test("keeps the workspace idle when root and delegated agents only have passive background work", async () => {
+  test("keeps the workspace idle when root and delegated agents only have background scripts", async () => {
     const workspace = new WorkspaceStatus();
-    const backgroundWork = { count: 1, runningCount: 0 };
+    const backgroundWork = { count: 1 };
     workspace.hasRootAgent({ id: "parent-agent", status: "idle", backgroundWork });
     workspace.hasDelegatedAgent({ id: "child-agent", status: "idle", backgroundWork });
 

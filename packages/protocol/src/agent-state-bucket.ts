@@ -16,8 +16,8 @@ export function isAgentRunning(input: {
   status: AgentLifecycleStatus | null | undefined;
   backgroundWork?: AgentBackgroundWorkSummary | null;
 }): boolean {
-  const { status, backgroundWork } = input;
-  return status === "running" || (backgroundWork?.runningCount ?? backgroundWork?.count ?? 0) > 0;
+  // Background scripts have their own task indicator; they do not keep an agent turn working.
+  return input.status === "running";
 }
 
 const WORKSPACE_STATE_BUCKET_PRIORITY = {

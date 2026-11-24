@@ -72,7 +72,7 @@ describe("deriveProjectDisplayName", () => {
 });
 
 describe("groupAgents", () => {
-  it("keeps an idle agent with long-running background work in the active group", () => {
+  it("keeps an idle agent with long-running background scripts in the inactive group", () => {
     const agent = makeAgent({
       status: "idle",
       turn: { phase: "idle", cancellationRequestId: null },
@@ -81,7 +81,7 @@ describe("groupAgents", () => {
     });
     expect(
       groupAgents([agent])
-        .activeGroups.flatMap((group) => group.agents)
+        .inactiveGroups.flatMap((group) => group.agents)
         .map((item) => item.id),
     ).toEqual([agent.id]);
   });

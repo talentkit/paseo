@@ -215,8 +215,8 @@ it("warns before archiving an idle subagent with live background work", async ()
   });
   await requestArchiveSubagent({ serverId: "server-1", subagentId: "child" }, env.deps);
   expect(env.recordedConfirmInputs[0]).toMatchObject({
-    title: "Archive running subagent?",
-    message: expect.stringContaining("will stop"),
+    title: "Archive subagent?",
+    message: "Archiving Review branch will stop its background work and remove it from the track.",
   });
 });
 

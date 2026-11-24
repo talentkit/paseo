@@ -16,6 +16,8 @@ This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carri
 11. **Downloads keep the app usable when authentication fails.** Browser and Electron downloads fetch the file before saving it, suppress browser login prompts, and reject HTTP errors or login redirects. Errors stay visible until dismissed. Native downloads also reject HTTP errors. Token-protected downloads support clients hosted on another origin.
 12. **Markdown list paragraphs keep their order.** Web and desktop replies keep concluding paragraphs below nested lists instead of joining them to the opening text. Task checkboxes and compact list spacing stay intact.
 
+13. **Working indicators follow the agent turn.** Background scripts do not keep idle agents in Working or show blue working dots on workspace rows, tabs, or subagents. The Background tasks pill still lists live scripts and lets you stop them. See [agent status](docs/agent-lifecycle.md#states).
+
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
 </p>

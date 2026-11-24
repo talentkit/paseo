@@ -12,6 +12,8 @@ initializing → idle → running → idle (or error → closed)
 
 Each live agent in `AgentManager` carries a `lastStatus` of `initializing`, `idle`, `running`, or `error`. `closed` is the persisted, resumable state for an agent record that has no live provider runtime. State transitions persist to disk and stream to subscribed clients via WebSocket.
 
+In this fork, Working and the blue status dots report foreground agent turns. An idle agent can still own live background scripts; inspect and stop those from the Background tasks pill. Keeping these signals separate prevents an abandoned script from making a finished conversation look busy. Background work still protects the provider runtime from idle cleanup and triggers a warning before archive.
+
 ## Daemon restart recovery
 
 Restart recovery is off by default. Enable `agents.resumeOnStartup` in host config or

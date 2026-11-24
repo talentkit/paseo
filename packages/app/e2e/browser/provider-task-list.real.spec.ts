@@ -178,8 +178,9 @@ async function closeBackgroundWork(page: Page, compact: boolean): Promise<void> 
   await expect(panel).toBeHidden();
 }
 
-async function expectBackgroundAgentRunning(page: Page): Promise<void> {
-  await expect(page.getByTestId("workspace-status-indicator-running").first()).toBeVisible();
+async function expectBackgroundAgentIdle(page: Page): Promise<void> {
+  await expect(page.getByTestId("background-work")).toBeVisible();
+  await expect(page.getByTestId("workspace-status-indicator-running")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop agent", exact: true })).toHaveCount(0);
 }
 
@@ -220,11 +221,10 @@ async function startBackgroundWorkWithoutOpeningPane(workspace: SeededWorkspace)
   expect(result.status).toBe("idle");
 }
 
-async function expectWorkspaceRunning(page: Page, workspaceId: string): Promise<void> {
+async function expectWorkspaceIdle(page: Page, workspaceId: string): Promise<void> {
   const row = page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspaceId}`);
-  await expect(row.getByTestId("workspace-status-indicator-running")).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByTestId("workspace-status-indicator-running")).toHaveCount(0);
 }
 
 test("Claude keeps background work visible while accepting another turn", async ({ page }) => {
@@ -237,7 +237,7 @@ test("Claude keeps background work visible while accepting another turn", async 
       handle,
       "Use Bash with run_in_background to run exactly sleep 120. Do not wait for it. Reply SPAWNED immediately.",
     );
-    await expectBackgroundAgentRunning(page);
+    await expectBackgroundAgentIdle(page);
     await openBackgroundWork(page, false);
     await page.screenshot({
       path: path.resolve("../../.artifacts/phase1-claude-background.png"),
@@ -313,7 +313,7 @@ test("background work updates the sidebar before the agent is opened", async ({ 
       page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspace.workspaceId}`),
     ).toBeVisible();
     await startBackgroundWorkWithoutOpeningPane(workspace);
-    await expectWorkspaceRunning(page, workspace.workspaceId);
+    await expectWorkspaceIdle(page, workspace.workspaceId);
   } finally {
     await workspace.cleanup();
   }
@@ -335,7 +335,7 @@ test("Codex keeps a live command visible after its turn", async ({ page }) => {
       handle,
       "Use exec_command to run sleep 120 with yield_time_ms 1000. Do not wait for or stop it. Reply SPAWNED immediately.",
     );
-    await expectBackgroundAgentRunning(page);
+    await expectBackgroundAgentIdle(page);
     await openBackgroundWork(page, false);
     await page.screenshot({
       path: path.resolve("../../.artifacts/phase2-codex-background.png"),
@@ -366,7 +366,7 @@ test("OpenCode keeps a live command visible after its turn", async ({ page }) =>
       handle,
       "Use the shell tool with background true to run sleep 120. Do not wait or stop it. Reply SPAWNED immediately.",
     );
-    await expectBackgroundAgentRunning(page);
+    await expectBackgroundAgentIdle(page);
     await openBackgroundWork(page, false);
     await page.screenshot({
       path: path.resolve("../../.artifacts/phase2-opencode-background.png"),
@@ -519,12 +519,12 @@ test("Claude shows monitor description and command in the wide track", async ({ 
       handle,
       'Use Monitor with command `sleep 150`, timeout_ms 150000, persistent false, description "Watch the build". Do not wait; reply SPAWNED. Do not use other tools.',
     );
-    await expectBackgroundAgentRunning(page);
+    await expectBackgroundAgentIdle(page);
     const workspaceRow = page.getByTestId(
       `sidebar-workspace-row-${getServerId()}:${handle.workspaceId}`,
     );
     await workspaceRow.scrollIntoViewIfNeeded();
-    await expect(workspaceRow.getByTestId("workspace-status-indicator-running")).toBeVisible();
+    await expect(workspaceRow.getByTestId("workspace-status-indicator-running")).toHaveCount(0);
     const panel = await openBackgroundInventory(page, {
       compact: false,
       count: 1,
