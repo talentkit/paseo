@@ -16,7 +16,7 @@ class BlankLineRenderer(
     node: MarkdownASTNode,
     builder: SpannableStringBuilder,
     onLinkPress: ((String, String) -> Unit)?,
-    onLinkLongPress: ((String) -> Unit)?,
+    onLinkLongPress: ((String, String) -> Unit)?,
     factory: RendererFactory,
   ) {
     val count = node.getAttribute("count")?.toIntOrNull() ?: 0

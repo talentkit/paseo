@@ -215,12 +215,8 @@ export const EnrichedMarkdownText = ({
     });
   }, [onLinkPress]);
   const handleLinkLongPress = useCallback(e => {
-    const {
-      url
-    } = e.nativeEvent;
-    onLinkLongPress?.({
-      url
-    });
+    const { url, sourceType } = e.nativeEvent;
+    onLinkLongPress?.({ url, sourceType });
   }, [onLinkLongPress]);
   const handleImagePress = useCallback(e => {
     const {

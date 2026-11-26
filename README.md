@@ -18,6 +18,8 @@ This branch tracks [getpaseo/paseo](https://github.com/getpaseo/paseo) and carri
 
 13. **Working indicators follow the agent turn.** Background scripts do not keep idle agents in Working or show blue working dots on workspace rows, tabs, or subagents. The Background tasks pill still lists live scripts and lets you stop them. See [agent status](docs/agent-lifecycle.md#states).
 
+14. **Actions on assistant file links.** Backports [upstream PR #9880](https://github.com/getpaseo/paseo/pull/9880). Right-click a file link to copy its path, open it, reveal it in Paseo or the local file manager, or download it. Native clients use long press. Paths retain literal percent characters and omit navigation line references; Ctrl/Cmd-click keeps the selected external Open target.
+
 <p align="center">
   <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
 </p>

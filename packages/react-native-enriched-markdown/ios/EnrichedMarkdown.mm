@@ -83,7 +83,7 @@ static char kENRMSegmentFadeAnimatorKey;
 @interface EnrichedMarkdown () <RCTEnrichedMarkdownViewProtocol, UITextViewDelegate, ENRMImageLayoutObserver>
 + (ENRMMd4cFlags *)flagsFromProps:(const EnrichedMarkdownMd4cFlagsStruct &)props;
 - (void)emitLinkPress:(NSString *)url sourceType:(NSString *)sourceType;
-- (void)emitLinkLongPress:(NSString *)url;
+- (void)emitLinkLongPress:(NSString *)url sourceType:(NSString *)sourceType;
 - (void)emitLinkContextMenuItemPress:(NSString *)itemText pattern:(NSString *)pattern url:(NSString *)url;
 - (void)emitImagePress:(NSString *)url altText:(NSString *)altText;
 - (void)emitTaskListItemPress:(NSInteger)index checked:(BOOL)checked text:(NSString *)text;
@@ -416,10 +416,10 @@ static char kENRMSegmentFadeAnimatorKey;
     if (strongSelf && url)
       [strongSelf emitLinkPress:url sourceType:sourceType];
   };
-  view.onLinkLongPress = ^(NSString *url) {
+  view.onLinkLongPress = ^(NSString *url, NSString *sourceType) {
     EnrichedMarkdown *strongSelf = weakSelf;
     if (strongSelf && url)
-      [strongSelf emitLinkLongPress:url];
+      [strongSelf emitLinkLongPress:url sourceType:sourceType];
   };
 
   view.onImagePress = ^(NSString *url, NSString *altText) {
@@ -992,10 +992,10 @@ static char kENRMSegmentFadeAnimatorKey;
       [strongSelf emitLinkPress:url sourceType:sourceType];
   };
 
-  tableView.onLinkLongPress = ^(NSString *url) {
+  tableView.onLinkLongPress = ^(NSString *url, NSString *sourceType) {
     EnrichedMarkdown *strongSelf = weakSelf;
     if (strongSelf && url)
-      [strongSelf emitLinkLongPress:url];
+      [strongSelf emitLinkLongPress:url sourceType:sourceType];
   };
 
   tableView.onImagePress = ^(NSString *url, NSString *altText) {
@@ -1489,11 +1489,11 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownCls(void)
     emitter->onImagePress({.url = std::string(url.UTF8String ?: ""), .altText = std::string(altText.UTF8String ?: "")});
 }
 
-- (void)emitLinkLongPress:(NSString *)url
+- (void)emitLinkLongPress:(NSString *)url sourceType:(NSString *)sourceType
 {
   auto emitter = std::static_pointer_cast<EnrichedMarkdownEventEmitter const>(_eventEmitter);
   if (emitter)
-    emitter->onLinkLongPress({.url = std::string(url.UTF8String)});
+    emitter->onLinkLongPress({.url = std::string(url.UTF8String), .sourceType = std::string(sourceType.UTF8String)});
 }
 
 - (void)emitLinkContextMenuItemPress:(NSString *)itemText pattern:(NSString *)pattern url:(NSString *)url
@@ -1619,7 +1619,7 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownCls(void)
 {
   __weak EnrichedMarkdown *weakSelf = self;
   return ENRMLinkMenuConfigurationForTextItem(textView, textItem, defaultMenu, _linkContextMenus, _enableLinkPreview,
-                                              ^(NSString *url) { [weakSelf emitLinkLongPress:url]; });
+                                              ^(NSString *url, NSString *sourceType) { [weakSelf emitLinkLongPress:url sourceType:sourceType]; });
 }
 
 - (ENRMLinkContextMenus *)linkContextMenusForTextView:(UITextView *)textView
@@ -1646,7 +1646,7 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownCls(void)
     return YES;
   }
 
-  [self emitLinkLongPress:urlString];
+  [self emitLinkLongPress:urlString sourceType:linkSourceTypeAtRange(textView, characterRange)];
   return NO;
 }
 #endif

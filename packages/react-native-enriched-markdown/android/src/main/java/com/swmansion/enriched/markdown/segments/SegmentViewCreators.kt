@@ -68,7 +68,7 @@ data class SegmentViewConfig(
   val contextMenuItemTexts: List<String>,
   val dynamicProps: DynamicBlockProps,
   val onLinkPress: ((String, String) -> Unit)?,
-  val onLinkLongPress: ((String) -> Unit)?,
+  val onLinkLongPress: ((String, String) -> Unit)?,
   val onTaskListItemPress: ((taskIndex: Int, checked: Boolean, itemText: String) -> Unit)?,
   val onContextMenuItemPress: ((itemText: String, selectedText: String, selectionStart: Int, selectionEnd: Int) -> Unit)?,
   val onLatexError: LatexErrorReporter? = null,

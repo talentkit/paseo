@@ -83,7 +83,7 @@ extern "C" {
  */
 UITextItemMenuConfiguration *_Nullable ENRMLinkMenuConfigurationForTextItem(
     UITextView *textView, UITextItem *textItem, UIMenu *defaultMenu, ENRMLinkContextMenus *_Nullable menus,
-    BOOL linkPreviewEnabled, void (^_Nullable onLinkLongPress)(NSString *url)) API_AVAILABLE(ios(17.0));
+    BOOL linkPreviewEnabled, void (^_Nullable onLinkLongPress)(NSString *url, NSString *sourceType)) API_AVAILABLE(ios(17.0));
 
 #ifdef __cplusplus
 }

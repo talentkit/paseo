@@ -310,8 +310,8 @@ export const EnrichedMarkdownText = ({
 
   const handleLinkLongPress = useCallback(
     (e: NativeSyntheticEvent<LinkLongPressEvent>) => {
-      const { url } = e.nativeEvent;
-      onLinkLongPress?.({ url });
+      const { url, sourceType } = e.nativeEvent;
+      onLinkLongPress?.({ url, sourceType });
     },
     [onLinkLongPress]
   );

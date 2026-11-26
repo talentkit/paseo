@@ -127,9 +127,7 @@ function LinkRenderer({
   const handleContextMenu = event => {
     if (callbacks.onLinkLongPress) {
       event.preventDefault();
-      callbacks.onLinkLongPress({
-        url
-      });
+      callbacks.onLinkLongPress(link);
     }
   };
   const anchorProps = {

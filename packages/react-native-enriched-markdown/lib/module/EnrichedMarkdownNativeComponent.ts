@@ -280,6 +280,7 @@ export interface LinkPressEvent {
 
 export interface LinkLongPressEvent {
   url: string;
+  sourceType: string;
 }
 
 export interface ImagePressEvent {

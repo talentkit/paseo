@@ -9,7 +9,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^TableLinkPressBlock)(NSString *url);
+typedef void (^TableLinkPressBlock)(NSString *url, NSString *sourceType);
 
 @interface TableContainerView : RCTUIView
 

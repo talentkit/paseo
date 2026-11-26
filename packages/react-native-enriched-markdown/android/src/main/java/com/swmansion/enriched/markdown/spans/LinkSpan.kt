@@ -13,7 +13,7 @@ import com.swmansion.enriched.markdown.utils.text.extensions.applyBlockStyleFont
 class LinkSpan(
   val url: String,
   private val onLinkPress: ((String, String) -> Unit)?,
-  private val onLinkLongPress: ((String) -> Unit)?,
+  private val onLinkLongPress: ((String, String) -> Unit)?,
   private val styleCache: SpanStyleCache,
   private val blockStyle: BlockStyle,
   private val context: Context,
@@ -37,9 +37,12 @@ class LinkSpan(
   fun onLongClick(widget: View): Boolean {
     longPressTriggered = true
 
-    (widget as? EnrichedMarkdownText)?.emitOnLinkLongPress(url)
-
-    onLinkLongPress?.invoke(url)
+    val sourceType = if (recognizedInlineCodeLink) "inline-code" else if (recognizedLink) "text" else "markdown"
+    if (widget is EnrichedMarkdownText) {
+      widget.emitOnLinkLongPress(url, sourceType)
+    } else {
+      onLinkLongPress?.invoke(url, sourceType)
+    }
 
     return true
   }

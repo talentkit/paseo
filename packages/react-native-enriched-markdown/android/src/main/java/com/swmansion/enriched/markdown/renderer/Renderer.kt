@@ -37,7 +37,7 @@ class Renderer {
   fun renderDocument(
     document: MarkdownASTNode,
     onLinkPress: ((String, String) -> Unit)? = null,
-    onLinkLongPress: ((String) -> Unit)? = null,
+    onLinkLongPress: ((String, String) -> Unit)? = null,
   ): SpannableStringBuilder = renderContent(document.children, onLinkPress, onLinkLongPress)
 
   /**
@@ -60,7 +60,7 @@ class Renderer {
   fun renderContent(
     nodes: List<MarkdownASTNode>,
     onLinkPress: ((String, String) -> Unit)? = null,
-    onLinkLongPress: ((String) -> Unit)? = null,
+    onLinkLongPress: ((String, String) -> Unit)? = null,
     block: BlockquoteTextRenderer? = null,
   ): SpannableStringBuilder {
     val factory =

@@ -234,10 +234,10 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                                 if (s.onLinkPress && url)
                                   s.onLinkPress(url, sourceType);
                               };
-                              view.onLinkLongPress = ^(NSString *url) {
+                              view.onLinkLongPress = ^(NSString *url, NSString *sourceType) {
                                 ENRMBlockquoteContainerView *s = weakSelf;
                                 if (s.onLinkLongPress && url)
-                                  s.onLinkLongPress(url);
+                                  s.onLinkLongPress(url, sourceType);
                               };
                               view.onImagePress = ^(NSString *url, NSString *altText) {
                                 ENRMBlockquoteContainerView *s = weakSelf;
@@ -304,10 +304,10 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                                 if (s.onLinkPress && url)
                                   s.onLinkPress(url, sourceType);
                               };
-                              view.onLinkLongPress = ^(NSString *url) {
+                              view.onLinkLongPress = ^(NSString *url, NSString *sourceType) {
                                 ENRMBlockquoteContainerView *s = weakSelf;
                                 if (s.onLinkLongPress && url)
-                                  s.onLinkLongPress(url);
+                                  s.onLinkLongPress(url, sourceType);
                               };
                             }
                             [view applyBlockquoteNode:segment.blockquoteSegment.blockquoteNode];

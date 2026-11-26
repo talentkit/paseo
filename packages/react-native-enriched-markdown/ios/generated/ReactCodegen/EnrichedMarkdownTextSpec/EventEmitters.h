@@ -19,11 +19,12 @@ class EnrichedMarkdownEventEmitter : public ViewEventEmitter {
 
   struct OnLinkPress {
       std::string url;
-      std::string sourceType;
+    std::string sourceType;
     };
 
   struct OnLinkLongPress {
       std::string url;
+    std::string sourceType;
     };
 
   struct OnImagePress {
@@ -299,11 +300,12 @@ class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
 
   struct OnLinkPress {
       std::string url;
-      std::string sourceType;
+    std::string sourceType;
     };
 
   struct OnLinkLongPress {
       std::string url;
+    std::string sourceType;
     };
 
   struct OnImagePress {

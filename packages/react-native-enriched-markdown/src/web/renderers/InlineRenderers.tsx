@@ -83,7 +83,7 @@ function LinkRenderer({
   const handleContextMenu = (event: MouseEvent) => {
     if (callbacks.onLinkLongPress) {
       event.preventDefault();
-      callbacks.onLinkLongPress({ url });
+      callbacks.onLinkLongPress(link);
     }
   };
 

@@ -12,6 +12,7 @@ extern "C" {
 NSString *_Nullable linkURLAtTapLocation(ENRMPlatformTextView *textView, ENRMTapRecognizer *recognizer);
 
 /// Returns the syntax of the link at the tap location.
+NSString *linkSourceTypeAtRange(ENRMPlatformTextView *textView, NSRange range);
 NSString *linkSourceTypeAtTapLocation(ENRMPlatformTextView *textView, ENRMTapRecognizer *recognizer);
 
 /// Returns the original link URL at a point in text-view coordinates.

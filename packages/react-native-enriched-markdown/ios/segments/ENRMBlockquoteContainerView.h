@@ -9,7 +9,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^ENRMBlockquoteLinkBlock)(NSString *url);
+typedef void (^ENRMBlockquoteLinkBlock)(NSString *url, NSString *sourceType);
 
 /**
  * A GFM blockquote rendered as a recursive container (issue #608): it splits its

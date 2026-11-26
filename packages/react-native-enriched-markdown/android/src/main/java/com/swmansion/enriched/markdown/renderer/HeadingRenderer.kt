@@ -18,7 +18,7 @@ class HeadingRenderer(
     node: MarkdownASTNode,
     builder: SpannableStringBuilder,
     onLinkPress: ((String, String) -> Unit)?,
-    onLinkLongPress: ((String) -> Unit)?,
+    onLinkLongPress: ((String, String) -> Unit)?,
     factory: RendererFactory,
   ) {
     if (builder.isNotEmpty() && builder.last() != '\n') {

@@ -10,7 +10,7 @@ class HighlightRenderer : NodeRenderer {
     node: MarkdownASTNode,
     builder: SpannableStringBuilder,
     onLinkPress: ((String, String) -> Unit)?,
-    onLinkLongPress: ((String) -> Unit)?,
+    onLinkLongPress: ((String, String) -> Unit)?,
     factory: RendererFactory,
   ) {
     factory.renderWithSpan(builder, { factory.renderChildren(node, builder, onLinkPress, onLinkLongPress) }) { start, end, blockStyle ->

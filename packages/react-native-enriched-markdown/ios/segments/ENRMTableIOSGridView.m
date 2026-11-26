@@ -226,9 +226,9 @@ static ENRMTableIOSItemHit *itemInAttributedString(NSAttributedString *text, CGR
 - (void)handleLinkGesture:(UIGestureRecognizer *)recognizer block:(ENRMTableIOSLinkBlock)block
 {
   CGPoint point = [recognizer locationInView:self];
-  NSString *url = [self linkAtPoint:point].url;
-  if (url && block) {
-    block(url);
+  ENRMTableIOSItemHit *hit = [self linkAtPoint:point];
+  if (hit.url && block) {
+    block(hit.url, hit.sourceType);
   }
 }
 

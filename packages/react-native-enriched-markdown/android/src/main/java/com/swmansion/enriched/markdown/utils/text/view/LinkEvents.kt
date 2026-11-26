@@ -27,11 +27,11 @@ fun View.emitImagePressEvent(
   dispatcher?.dispatchEvent(ImagePressEvent(surfaceId, id, url, altText))
 }
 
-fun View.emitLinkLongPressEvent(url: String) {
+fun View.emitLinkLongPressEvent(url: String, sourceType: String) {
   val reactContext = context as? ReactContext ?: return
   val surfaceId = UIManagerHelper.getSurfaceId(reactContext)
   val dispatcher = UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
-  dispatcher?.dispatchEvent(LinkLongPressEvent(surfaceId, id, url))
+  dispatcher?.dispatchEvent(LinkLongPressEvent(surfaceId, id, url, sourceType))
 }
 
 /**

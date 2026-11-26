@@ -5,6 +5,7 @@ export interface LinkPressEvent {
 }
 export interface LinkLongPressEvent {
     url: string;
+    sourceType?: LinkPressEvent["sourceType"];
 }
 export interface ImagePressEvent {
     url: string;

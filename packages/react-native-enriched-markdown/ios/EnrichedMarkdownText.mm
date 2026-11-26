@@ -63,7 +63,7 @@ typedef NS_OPTIONS(NSUInteger, ENRMDirtyFlags) {
 - (void)textTapped:(ENRMTapRecognizer *)recognizer;
 - (void)setupLayoutManager;
 - (void)emitLinkPress:(NSString *)url sourceType:(NSString *)sourceType;
-- (void)emitLinkLongPress:(NSString *)url;
+- (void)emitLinkLongPress:(NSString *)url sourceType:(NSString *)sourceType;
 - (void)emitLinkContextMenuItemPress:(NSString *)itemText pattern:(NSString *)pattern url:(NSString *)url;
 - (void)emitImagePress:(NSString *)url altText:(NSString *)altText;
 - (void)emitCodeBlockPress:(NSString *)code language:(NSString *)language;
@@ -916,11 +916,11 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownTextCls(void)
     emitter->onLinkPress({.url = std::string(url.UTF8String), .sourceType = std::string(sourceType.UTF8String)});
 }
 
-- (void)emitLinkLongPress:(NSString *)url
+- (void)emitLinkLongPress:(NSString *)url sourceType:(NSString *)sourceType
 {
   auto emitter = std::static_pointer_cast<EnrichedMarkdownTextEventEmitter const>(_eventEmitter);
   if (emitter)
-    emitter->onLinkLongPress({.url = std::string(url.UTF8String)});
+    emitter->onLinkLongPress({.url = std::string(url.UTF8String), .sourceType = std::string(sourceType.UTF8String)});
 }
 
 - (void)emitLinkContextMenuItemPress:(NSString *)itemText pattern:(NSString *)pattern url:(NSString *)url
@@ -1028,7 +1028,7 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownTextCls(void)
 {
   __weak EnrichedMarkdownText *weakSelf = self;
   return ENRMLinkMenuConfigurationForTextItem(textView, textItem, defaultMenu, _linkContextMenus, _enableLinkPreview,
-                                              ^(NSString *url) { [weakSelf emitLinkLongPress:url]; });
+                                              ^(NSString *url, NSString *sourceType) { [weakSelf emitLinkLongPress:url sourceType:sourceType]; });
 }
 
 - (ENRMLinkContextMenus *)linkContextMenusForTextView:(UITextView *)textView
@@ -1055,7 +1055,7 @@ Class<RCTComponentViewProtocol> EnrichedMarkdownTextCls(void)
     return YES;
   }
 
-  [self emitLinkLongPress:urlString];
+  [self emitLinkLongPress:urlString sourceType:linkSourceTypeAtRange(textView, characterRange)];
   return NO;
 }
 

@@ -7,7 +7,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^ENRMTableIOSLinkBlock)(NSString *url);
+typedef void (^ENRMTableIOSLinkBlock)(NSString *url, NSString *sourceType);
 
 typedef NS_ENUM(NSInteger, ENRMTableIOSItemKind) {
   ENRMTableIOSItemKindLink,

@@ -48,11 +48,12 @@ fun emitLinkPress(
 fun emitLinkLongPress(
   view: View,
   url: String,
+  sourceType: String,
 ) {
   val context = view.context as com.facebook.react.bridge.ReactContext
   val surfaceId = UIManagerHelper.getSurfaceId(context)
   val eventDispatcher = UIManagerHelper.getEventDispatcherForReactTag(context, view.id)
-  eventDispatcher?.dispatchEvent(LinkLongPressEvent(surfaceId, view.id, url))
+  eventDispatcher?.dispatchEvent(LinkLongPressEvent(surfaceId, view.id, url, sourceType))
 }
 
 fun emitTaskListItemPress(

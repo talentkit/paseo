@@ -327,10 +327,10 @@ static void ENRMTableComputeLayout(NSArray<NSArray<TableCellData *> *> *rows, NS
   };
   iosGridView.hasLinkContextMenu =
       ^BOOL(NSString *url) { return [weakSelf.dynamicProps.linkContextMenus hasMenuForURL:url]; };
-  iosGridView.onLinkLongTap = ^(NSString *url) {
+  iosGridView.onLinkLongTap = ^(NSString *url, NSString *sourceType) {
     TableContainerView *strongSelf = weakSelf;
     if (strongSelf && strongSelf.onLinkLongPress)
-      strongSelf.onLinkLongPress(url);
+      strongSelf.onLinkLongPress(url, sourceType);
   };
   _gridContainer = iosGridView;
   [_scrollView addSubview:_gridContainer];

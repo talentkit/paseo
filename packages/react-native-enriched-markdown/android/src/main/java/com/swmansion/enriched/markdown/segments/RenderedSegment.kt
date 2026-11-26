@@ -65,7 +65,7 @@ object MarkdownSegmentRenderer {
     style: StyleConfig,
     context: Context,
     onLinkPress: ((String, String) -> Unit)?,
-    onLinkLongPress: ((String) -> Unit)?,
+    onLinkLongPress: ((String, String) -> Unit)?,
     blockquoteStyle: BlockquoteStyle? = null,
     onLatexError: LatexErrorReporter? = null,
   ): List<RenderedSegment> =
@@ -108,7 +108,7 @@ object MarkdownSegmentRenderer {
     style: StyleConfig,
     context: Context,
     onLinkPress: ((String, String) -> Unit)?,
-    onLinkLongPress: ((String) -> Unit)?,
+    onLinkLongPress: ((String, String) -> Unit)?,
     blockquoteStyle: BlockquoteStyle?,
     onLatexError: LatexErrorReporter?,
   ): RenderedSegment.Text {

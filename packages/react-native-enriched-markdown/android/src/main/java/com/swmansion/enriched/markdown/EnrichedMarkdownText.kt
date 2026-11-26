@@ -70,7 +70,7 @@ class EnrichedMarkdownText
     private val parser = Parser.shared
     private val renderer = Renderer()
     private var onLinkPressCallback: ((String, String) -> Unit)? = null
-    private var onLinkLongPressCallback: ((String) -> Unit)? = null
+    private var onLinkLongPressCallback: ((String, String) -> Unit)? = null
     private var onLatexErrorCallback: LatexErrorReporter? = null
 
     private val reportedLatexErrors = HashSet<String>()
@@ -459,8 +459,8 @@ class EnrichedMarkdownText
       emitLinkPressEvent(url, sourceType)
     }
 
-    fun emitOnLinkLongPress(url: String) {
-      emitLinkLongPressEvent(url)
+    fun emitOnLinkLongPress(url: String, sourceType: String = "markdown") {
+      emitLinkLongPressEvent(url, sourceType)
     }
 
     override var imagePressEnabled: Boolean = false
@@ -495,7 +495,7 @@ class EnrichedMarkdownText
       onLinkPressCallback = callback
     }
 
-    fun setOnLinkLongPressCallback(callback: (String) -> Unit) {
+    fun setOnLinkLongPressCallback(callback: (String, String) -> Unit) {
       onLinkLongPressCallback = callback
     }
 

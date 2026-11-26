@@ -96,7 +96,7 @@ class EnrichedMarkdown(
   private var textBreakStrategy: String = BreakStrategyUtils.DEFAULT_STRATEGY
 
   private var onLinkPressCallback: ((String, String) -> Unit)? = null
-  private var onLinkLongPressCallback: ((String) -> Unit)? = null
+  private var onLinkLongPressCallback: ((String, String) -> Unit)? = null
   private var onTaskListItemPressCallback: ((Int, Boolean, String) -> Unit)? = null
   private var onLatexErrorCallback: LatexErrorReporter? = null
 
@@ -300,7 +300,7 @@ class EnrichedMarkdown(
     onLinkPressCallback = callback
   }
 
-  fun setOnLinkLongPressCallback(callback: (String) -> Unit) {
+  fun setOnLinkLongPressCallback(callback: (String, String) -> Unit) {
     onLinkLongPressCallback = callback
   }
 

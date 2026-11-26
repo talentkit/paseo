@@ -86,4 +86,25 @@ class InlineCodeFormattingTest {
     }
   }
 
+
+  @Test fun longPressPreservesInlineCodeSyntaxWithoutOpeningTheLink() {
+    val context = RuntimeEnvironment.getApplication()
+    val selected = mutableListOf<Pair<String, String>>()
+    var opens = 0
+    val span = com.swmansion.enriched.markdown.spans.LinkSpan(
+      url = "notes%20file.md",
+      onLinkPress = { _, _ -> opens++ },
+      onLinkLongPress = { url, sourceType -> selected.add(url to sourceType) },
+      styleCache = cache(),
+      blockStyle = BlockStyle(14f, "", "normal", -16777216),
+      context = context,
+      recognizedLink = true,
+      recognizedInlineCodeLink = true,
+    )
+    val view = android.view.View(context)
+    assertTrue(span.onLongClick(view))
+    span.onClick(view)
+    assertEquals(listOf("notes%20file.md" to "inline-code"), selected)
+    assertEquals(0, opens)
+  }
 }

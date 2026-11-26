@@ -17,7 +17,7 @@ void EnrichedMarkdownEventEmitter::onLinkPress(OnLinkPress event) const {
   dispatchEvent("linkPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
-    payload.setProperty(runtime, "sourceType", event.sourceType);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }
@@ -27,6 +27,7 @@ void EnrichedMarkdownEventEmitter::onLinkLongPress(OnLinkLongPress event) const 
   dispatchEvent("linkLongPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }
@@ -363,7 +364,7 @@ void EnrichedMarkdownTextEventEmitter::onLinkPress(OnLinkPress event) const {
   dispatchEvent("linkPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
-    payload.setProperty(runtime, "sourceType", event.sourceType);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }
@@ -373,6 +374,7 @@ void EnrichedMarkdownTextEventEmitter::onLinkLongPress(OnLinkLongPress event) co
   dispatchEvent("linkLongPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }

@@ -789,6 +789,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             client={client}
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
+            workspaceId={context.workspaceId ?? undefined}
             onOpenWorkspaceFile={handleInlinePathPress}
             onOpenWorkspaceFileInPreferredTarget={handleInlinePathPreferredTargetPress}
             toast={toast}
@@ -814,6 +815,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [
         agentId,
         client,
+        context.workspaceId,
         handleInlinePathPress,
         handleInlinePathPreferredTargetPress,
         resolvedServerId,

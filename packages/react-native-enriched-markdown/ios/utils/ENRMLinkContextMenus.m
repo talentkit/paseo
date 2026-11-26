@@ -159,7 +159,7 @@
 UITextItemMenuConfiguration *ENRMLinkMenuConfigurationForTextItem(UITextView *textView, UITextItem *textItem,
                                                                   UIMenu *defaultMenu, ENRMLinkContextMenus *menus,
                                                                   BOOL linkPreviewEnabled,
-                                                                  void (^onLinkLongPress)(NSString *url))
+                                                                  void (^onLinkLongPress)(NSString *url, NSString *sourceType))
 {
   if ([textView conformsToProtocol:@protocol(ENRMLinkMenuPresenting)] &&
       [(id<ENRMLinkMenuPresenting>)textView presentsLinkMenuAtIndex:textItem.range.location])
@@ -170,7 +170,7 @@ UITextItemMenuConfiguration *ENRMLinkMenuConfigurationForTextItem(UITextView *te
     return [UITextItemMenuConfiguration configurationWithMenu:menu];
   if (url && !linkPreviewEnabled) {
     if (onLinkLongPress)
-      onLinkLongPress(url);
+      onLinkLongPress(url, linkSourceTypeAtRange(textView, textItem.range));
     return nil;
   }
   return [UITextItemMenuConfiguration configurationWithMenu:defaultMenu];

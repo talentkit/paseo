@@ -58,7 +58,7 @@ class TableContainerView(
   var allowFontScaling = true
   var maxFontSizeMultiplier = 0f
   var onLinkPress: ((String, String) -> Unit)? = null
-  var onLinkLongPress: ((String) -> Unit)? = null
+  var onLinkLongPress: ((String, String) -> Unit)? = null
   var accessibilityLabels: AccessibilityLabels = AccessibilityLabels()
     set(value) {
       if (field == value) return

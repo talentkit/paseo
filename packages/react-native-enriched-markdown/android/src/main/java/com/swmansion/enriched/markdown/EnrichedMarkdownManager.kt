@@ -54,8 +54,8 @@ class EnrichedMarkdownManager :
       emitLinkPress(view, url, sourceType)
     }
 
-    view.setOnLinkLongPressCallback { url ->
-      emitLinkLongPress(view, url)
+    view.setOnLinkLongPressCallback { url, sourceType ->
+      emitLinkLongPress(view, url, sourceType)
     }
 
     view.setOnTaskListItemPressCallback { taskIndex, checked, itemText ->
